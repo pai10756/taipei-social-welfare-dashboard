@@ -1,8 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* 這行只是順便幫 body 上背景色與文字顏色，可加可不加 */
+/* 這裡先用最簡單的全域樣式，真正的設計都在 JSX 的 className + Tailwind CDN */
 body {
-  @apply bg-orange-50/30 text-slate-800;
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
 }
