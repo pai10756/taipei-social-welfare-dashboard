@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, ComposedChart, ReferenceLine,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, LabelList
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, LabelList, Label
 } from 'recharts';
 
 // ==========================================
@@ -699,9 +699,51 @@ const SocialWelfareView = () => {
                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                        <XAxis dataKey="district" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => `${(val * 100).toFixed(0)}%`} />
-                       <Tooltip cursor={{fill: '#f8fafc'}} />
+                       
+                       {/* 修正後的 Tooltip：完全還原原設計樣式 */}
+                       <Tooltip 
+                          cursor={{fill: '#f8fafc'}}
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm w-64">
+                                  <h4 className="font-bold text-slate-800 text-lg mb-2">{label}</h4>
+                                  
+                                  {/* Section 1: 現況 */}
+                                  <div className="mb-3">
+                                    <div className="flex justify-between text-xs text-slate-500 mb-1">
+                                      <span>現況 (vs 0-1歲人口)</span>
+                                      <span>{data.popNow}人</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-blue-500 font-medium">
+                                      <span>容量 {data.capacityNow}</span>
+                                      <span className="font-bold text-lg">{(data.coverageNow * 100).toFixed(1)}%</span>
+                                    </div>
+                                  </div>
+                                  
+                                  <hr className="border-slate-100 mb-3"/>
+                                  
+                                  {/* Section 2: 布建後 */}
+                                  <div>
+                                    <div className="flex justify-between text-xs text-slate-500 mb-1">
+                                      <span>布建後 (118年推估)</span>
+                                      <span>{data.futurePop}人</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-teal-500 font-medium">
+                                      <span>總容量 {data.capacityFutureTotal}</span>
+                                      <span className="font-bold text-lg">{(data.coverageFuture * 100).toFixed(1)}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                       />
+
                        <ReferenceLine y={0.10} stroke="#EF4444" strokeDasharray="3 3">
-                          <text x="10" y="10%" dy={-10} fill="#EF4444" fontSize={12} fontWeight="bold">目標 10%</text>
+                          <Label value="目標 10%" position="insideTopLeft" fill="#EF4444" fontSize={12} fontWeight="bold" />
                        </ReferenceLine>
                        <Bar dataKey="coverageNow" name="現況覆蓋率" fill="#60A5FA" barSize={20} radius={[4, 4, 0, 0]} />
                        <Bar dataKey="coverageFuture" name="布建後覆蓋率" fill="#2DD4BF" barSize={20} radius={[4, 4, 0, 0]} />
@@ -1022,8 +1064,8 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
       />
       <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-100 z-30 transform transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-slate-50 flex flex-col items-center gap-4 text-center">
-          {/* Logo 區域 (純白底、無陰影，字再放大50%，靠近文字) */}
-          <div className="w-24 h-24 flex items-center justify-center overflow-hidden mb-[-10px]">
+          {/* Logo 區域 (純透明底、放大1.5倍、靠近文字) */}
+          <div className="w-24 h-24 flex items-center justify-center overflow-visible mb-[-12px]">
              <img 
                src="綜合規劃股儀表板logo.jpg" 
                alt="綜合規劃股"
