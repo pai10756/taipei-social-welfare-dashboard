@@ -61,9 +61,11 @@ const parseData = (text, headerKeyword = null) => {
   };
 
   const headers = parseLine(lines[0]);
+  // 為了處理重複標題或無標題情況，我們回傳陣列格式的 raw data 供後續特定邏輯使用
+  // 但為了相容舊程式碼，這裡回傳物件陣列，並附帶一個 _raw 屬性存原始陣列
   return lines.slice(1).map(line => {
     const values = parseLine(line);
-    const entry = {};
+    const entry = { _raw: values }; // 保留原始陣列以供 Index 存取
     headers.forEach((header, index) => {
       const cleanHeader = header.replace(/^\uFEFF/, '').trim();
       if (cleanHeader) {
@@ -82,18 +84,29 @@ const parsePopulationData = (text) => {
   lines = lines.slice(headerIndex);
   const separator = lines[0].includes('\t') ? '\t' : ',';
   
-  // 簡化解析邏輯
-  const headers = lines[0].split(separator).map(h => h.replace(/^"|"$/g, '').trim());
-  
+  const parseLine = (line) => {
+    const result = [];
+    let start = 0;
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '"') inQuotes = !inQuotes;
+      else if (line[i] === separator && !inQuotes) {
+        result.push(line.substring(start, i).replace(/^"|"$/g, '').trim());
+        start = i + 1;
+      }
+    }
+    result.push(line.substring(start).replace(/^"|"$/g, '').trim());
+    return result;
+  };
+
+  const headers = parseLine(lines[0]);
   return lines.slice(1).map(line => {
-    // 簡易分割，若資料內有逗號需用完整 parseLine
-    const cols = line.split(separator).map(c => c.replace(/^"|"$/g, '').trim());
+    const cols = parseLine(line);
     const entry = {};
     headers.forEach((h, i) => {
        const cleanH = h.replace(/^\uFEFF/, '').trim();
        if (cleanH) entry[cleanH] = cols[i] || '';
     });
-    // 強制附加 H 欄數據 (Index 7)
     if (cols.length > 7) entry['raw_col_h'] = cols[7];
     return entry;
   });
@@ -116,7 +129,7 @@ const COLORS = {
 };
 
 // ==========================================
-// 1. 舊有頁面：社福設施 (SocialWelfareView)
+// 1. 社福設施頁面 (SocialWelfareView) - 保持不變
 // ==========================================
 const SocialWelfareView = () => {
   const [csvData, setCsvData] = useState([]); 
@@ -187,8 +200,6 @@ const SocialWelfareView = () => {
     fetchAllData();
   }, []);
 
-  // ... (保留原本 SocialWelfareView 內所有的 useMemo 計算邏輯，不變動) ...
-  // 為節省篇幅，此處邏輯與您原始程式碼完全相同，僅變數範圍調整
   const processedData = useMemo(() => {
     if (csvData.length === 0) return [];
     const findKey = (obj, keywords) => {
@@ -315,7 +326,6 @@ const SocialWelfareView = () => {
   const { districtSummary, cityStats, cumulativeTrend, priorityList, chartData } = useMemo(() => {
     if (popData.length === 0 && childcareNowData.length === 0) return { districtSummary: [], cityStats: {}, cumulativeTrend: [], priorityList: [], chartData: [] };
     
-    // ... (保留原本的 districtSummary 複雜計算邏輯) ...
     const getVal = (obj, keywords) => {
       const k = Object.keys(obj).find(k => keywords.some(w => k.includes(w)));
       return k ? parseNumber(obj[k]) : 0;
@@ -416,7 +426,6 @@ const SocialWelfareView = () => {
     };
   }, [popData, childcareNowData, childcareFutureData, telecomData]);
 
-  // SectionTitle 組件
   const SectionTitle = ({ title, colorClass = "bg-teal-500", icon: Icon }) => (
     <div className="flex items-center gap-3 mb-6">
       <div className={`w-1.5 h-8 ${colorClass}`}></div>
@@ -429,7 +438,6 @@ const SocialWelfareView = () => {
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
-      {/* 1. 基地大樓 PM 查詢 */}
       <section className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
           <SectionTitle title="新建工程基地大樓 PM 查詢" colorClass="bg-blue-500" icon={User} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
@@ -490,7 +498,6 @@ const SocialWelfareView = () => {
           </div>
       </section>
 
-      {/* 2. 委外服務設施現況與趨勢 */}
       <section>
           <SectionTitle title="委外服務設施現況與趨勢" colorClass="bg-orange-500" icon={Layout} />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -504,7 +511,6 @@ const SocialWelfareView = () => {
                 <p className="text-[10px] text-slate-400 mt-1">含勞務/委營/方案委託</p>
               </div>
             </div>
-            {/* 其他三張卡片略為省略重複結構以節省空間，請保持原樣 */}
              <div className="bg-white p-6 rounded-2xl shadow-sm border border-teal-100 flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center text-teal-500">
                 <CheckCircle2 size={24} />
@@ -538,7 +544,6 @@ const SocialWelfareView = () => {
           </div>
       </section>
 
-      {/* 3. 趨勢圖 */}
       <section>
            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
             <div className="flex items-center gap-2 mb-8">
@@ -567,7 +572,6 @@ const SocialWelfareView = () => {
           </div>
       </section>
 
-      {/* 4. 社宅參建 */}
       <section>
           <SectionTitle title="社宅參建 | 福利設施開箱" colorClass="bg-teal-500" icon={Building2} />
           <div className="grid grid-cols-12 gap-6">
@@ -642,10 +646,8 @@ const SocialWelfareView = () => {
           </div>
       </section>
 
-      {/* 5. 公托覆蓋率 */}
       <section>
           <SectionTitle title="公托覆蓋率與缺口分析" colorClass="bg-rose-500" icon={Baby} />
-          {/* Top: 趨勢圖 + 全市覆蓋率 */}
           <div className="grid grid-cols-12 gap-6 mb-6">
              <div className="col-span-12 lg:col-span-8 bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
                <div className="flex items-center justify-between mb-4">
@@ -692,7 +694,6 @@ const SocialWelfareView = () => {
                 </div>
              </div>
           </div>
-          {/* Bottom: 各區覆蓋率 & 優先清單 */}
           <div className="grid grid-cols-12 gap-6">
             <div className="col-span-12 lg:col-span-8 bg-white rounded-3xl p-8 shadow-sm border border-slate-100 min-h-[500px]">
                <h3 className="text-lg font-bold text-slate-700 mb-6">各行政區公托覆蓋率</h3>
@@ -742,7 +743,6 @@ const SocialWelfareView = () => {
                             </div>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${badgeColor}`}>{badgeText}</span>
                           </div>
-                          {/* 電信指標 */}
                           <div className="flex items-center gap-2 mb-3 bg-white px-2 py-1 rounded border border-slate-100 w-fit">
                              <Smartphone size={12} className="text-slate-400"/>
                              <span className="text-[10px] text-slate-500">日夜比: {dist.dayNightRatio.toFixed(2)}</span>
@@ -765,38 +765,30 @@ const SocialWelfareView = () => {
 };
 
 // ==========================================
-// 2. 新增頁面：社宅弱勢主題 (SocialHousingVulnerableView)
+// 2. 新增頁面：社宅弱勢主題 (SocialHousingVulnerabilityView)
 // ==========================================
 const SocialHousingVulnerabilityView = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // [USER TODO]: 請在此填入新的 Google Sheet CSV 連結
-  const VULNERABLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv'; // <--- 請替換成您的連結
+  // [已更新]: 使用您提供的新 URL
+  const VULNERABLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv';
 
-  // 欄位對應設定 (若 Sheet 標題不同，請在此修改)
-  // 假設欄位順序或名稱如下，請務必確認您的 Google Sheet 標題列名稱
-  // 注意：程式碼中使用的是概略比對，請確保 CSV 有包含這些關鍵字
-  const COL_KEYWORDS = {
-    elderly: ['獨老', '列冊獨老', 'M'],       // M欄
-    disability: ['身心障礙', '障礙', 'H'],    // H欄 (V標記)
-    houseNo: ['戶號', '戶號編碼', 'Z'],       // Z欄 (唯一值)
-    welfare: ['福利', '低收', 'L'],           // L欄 (福利身分)
-    disabilityType: ['障礙類別', 'J']         // J欄
+  // 欄位索引對應 (0-based Index)
+  // M=12, H=7, Z=25, L=11, J=9
+  const COL_INDEX = {
+    elderly: 12,    // M欄
+    disability: 7,  // H欄
+    houseNo: 25,    // Z欄
+    welfare: 11,    // L欄
+    disType: 9      // J欄
   };
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // 若尚未設定 URL，可先使用空陣列或 mock
-        if (VULNERABLE_SHEET_URL === 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv') {
-            console.warn("尚未設定社宅弱勢資料表連結");
-            setLoading(false);
-            return;
-        }
         const res = await fetch(VULNERABLE_SHEET_URL).then(r => r.text());
-        // 使用通用解析器
         const parsed = parseData(res);
         setData(parsed);
       } catch (error) {
@@ -808,57 +800,35 @@ const SocialHousingVulnerabilityView = () => {
     fetchData();
   }, []);
 
-  // 計算邏輯
   const stats = useMemo(() => {
     if (data.length === 0) return null;
-
-    // 尋找欄位 Key (動態對應)
-    const findKey = (obj, keywords) => Object.keys(obj).find(k => keywords.some(w => k.includes(w)));
-    const sample = data[0];
-    
-    // 這裡我們嘗試用第一列來抓取正確的欄位名稱
-    // 如果您的 CSV 沒有標題，這裡會出錯。請確保 CSV 第一列是標題。
-    // 或是如果沒有標題，我們可以用 Object.keys(sample)[index] 來硬抓 (M=12, H=7, Z=25, L=11, J=9 - Index from 0)
-    // 為了保險起見，若找不到關鍵字，我們改用「假設的順序」作為備案，但強烈建議 CSV 要有標題。
-    
-    let kElderly = findKey(sample, COL_KEYWORDS.elderly);
-    let kDisability = findKey(sample, COL_KEYWORDS.disability);
-    let kHouseNo = findKey(sample, COL_KEYWORDS.houseNo);
-    let kWelfare = findKey(sample, COL_KEYWORDS.welfare);
-    let kDisType = findKey(sample, COL_KEYWORDS.disabilityType);
-
-    // [備案]: 如果找不到標題，嘗試用欄位索引 (Index從0開始: A=0, H=7, J=9, L=11, M=12, Z=25)
-    // 注意: 這取決於 parseData 產生的物件 key 順序，可能有風險。
-    const keys = Object.keys(sample);
-    if (!kElderly && keys.length > 12) kElderly = keys[12]; 
-    if (!kDisability && keys.length > 7) kDisability = keys[7];
-    if (!kHouseNo && keys.length > 25) kHouseNo = keys[25]; 
-    if (!kWelfare && keys.length > 11) kWelfare = keys[11];
-    if (!kDisType && keys.length > 9) kDisType = keys[9];
 
     // 初始化計數器
     let countElderlyPeople = 0;
     const setElderlyHouse = new Set();
-
     let countDisabilityPeople = 0;
     const setDisabilityHouse = new Set();
-
     let countLowIncomePeople = 0;
     const setLowIncomeHouse = new Set();
-
     let countMidLowPeople = 0;
     const setMidLowHouse = new Set();
 
-    // 長條圖資料結構
-    const lowIncomeTypeMap = {}; // Key: 類別 (0-4), Value: 戶數 (Set of HouseNo)
-    const disTypeMap = {}; // Key: 類別, Value: 人數
+    const lowIncomeTypeMap = {}; 
+    const disTypeMap = {}; 
 
     data.forEach(row => {
-      const houseNo = row[kHouseNo] || 'unknown';
-      const valElderly = (row[kElderly] || '').trim();
-      const valDisability = (row[kDisability] || '').trim(); // 預期是 'V'
-      const valWelfare = (row[kWelfare] || '').trim();
-      const valDisType = (row[kDisType] || '').trim();
+      // 為了避免標題名稱對不上的問題，我們優先使用 _raw (原始陣列) 搭配欄位索引
+      // 如果 row._raw 存在，使用 index 取值；否則嘗試用 key (fallback)
+      const getValue = (idx, fallbackKey) => {
+        if (row._raw && row._raw[idx] !== undefined) return String(row._raw[idx]).trim();
+        return String(row[Object.keys(row).find(k => k.includes(fallbackKey))] || '').trim();
+      };
+
+      const houseNo = getValue(COL_INDEX.houseNo, '戶號');
+      const valElderly = getValue(COL_INDEX.elderly, '獨老');
+      const valDisability = getValue(COL_INDEX.disability, '身心障礙');
+      const valWelfare = getValue(COL_INDEX.welfare, '福利');
+      const valDisType = getValue(COL_INDEX.disType, '障礙類別');
 
       // (1) 獨老
       if (valElderly === '是' || valElderly === 'V') {
@@ -870,52 +840,40 @@ const SocialHousingVulnerabilityView = () => {
       if (valDisability === 'V' || valDisability === '是') {
         countDisabilityPeople++;
         if (houseNo) setDisabilityHouse.add(houseNo);
-
-        // (6) 身障類別統計 (依人數)
+        // 身障類別
         if (valDisType) {
           disTypeMap[valDisType] = (disTypeMap[valDisType] || 0) + 1;
         }
       }
 
-      // (3)(4) 低收與中低收
-      // 假設值為 "0類", "1類"... "4類", "中低收"
+      // (3)(4) 福利身分
       if (valWelfare.includes('中低收')) {
         countMidLowPeople++;
         if (houseNo) setMidLowHouse.add(houseNo);
       } else if (['0類', '1類', '2類', '3類', '4類'].some(t => valWelfare.includes(t)) || valWelfare.match(/[0-4]類/)) {
-        // 低收 (0-4類)
         countLowIncomePeople++;
         if (houseNo) setLowIncomeHouse.add(houseNo);
 
-        // (5) 低收類別結構 (依戶數) - 需去重
-        // 為了正確計算各類別的戶數，我們這裡暫時存入 Set
-        // 假設每一列代表一個人，若同一戶有兩人分別為 1類和2類，該戶會分別被計入
-        // 若同一戶兩人都是1類，該戶在1類只算1次
         const match = valWelfare.match(/[0-4]類/);
-        const type = match ? match[0] : valWelfare; // 抓取 "1類" 等字眼
+        const type = match ? match[0] : valWelfare;
         if (!lowIncomeTypeMap[type]) lowIncomeTypeMap[type] = new Set();
         if (houseNo) lowIncomeTypeMap[type].add(houseNo);
       }
     });
 
-    // 整理圖表數據 (5) 低收入戶類別結構 (戶數)
     const lowIncomeChartData = Object.entries(lowIncomeTypeMap).map(([name, set]) => ({
-      name,
-      value: set.size,
-      fullValue: set.size // 用於顯示
+      name, value: set.size, fullValue: set.size
     })).sort((a, b) => a.name.localeCompare(b.name));
     
-    // 計算百分比
     const totalLowIncomeHouse = lowIncomeChartData.reduce((acc, c) => acc + c.value, 0);
     lowIncomeChartData.forEach(d => {
       d.percent = totalLowIncomeHouse > 0 ? ((d.value / totalLowIncomeHouse) * 100).toFixed(1) + '%' : '0%';
       d.label = `${d.value}戶 (${d.percent})`;
     });
 
-    // 整理圖表數據 (6) 身障類別 (人數)
     const disChartData = Object.entries(disTypeMap).map(([name, value]) => ({
       name, value
-    })).sort((a, b) => b.value - a.value); // 依人數排序
+    })).sort((a, b) => b.value - a.value); 
     
     const totalDisPeople = disChartData.reduce((acc, c) => acc + c.value, 0);
     disChartData.forEach(d => {
@@ -928,10 +886,7 @@ const SocialHousingVulnerabilityView = () => {
       disability: { people: countDisabilityPeople, house: setDisabilityHouse.size },
       lowIncome: { people: countLowIncomePeople, house: setLowIncomeHouse.size },
       midLow: { people: countMidLowPeople, house: setMidLowHouse.size },
-      charts: {
-        lowIncome: lowIncomeChartData,
-        disability: disChartData
-      }
+      charts: { lowIncome: lowIncomeChartData, disability: disChartData }
     };
   }, [data]);
 
@@ -956,7 +911,7 @@ const SocialHousingVulnerabilityView = () => {
   );
 
   if (loading) return <div className="flex h-96 items-center justify-center text-slate-400"><Loader2 className="animate-spin mr-2"/> 載入數據中...</div>;
-  if (!stats) return <div className="flex h-96 items-center justify-center text-slate-400">無法讀取資料，請檢查連結</div>;
+  if (!stats) return <div className="flex h-96 items-center justify-center text-slate-400">無法讀取資料，請確認 Google Sheet 是否已發布為 CSV</div>;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -1027,7 +982,7 @@ const SocialHousingVulnerabilityView = () => {
 
 
 // ==========================================
-// 3. 主框架 (Main Layout)
+// 3. 主框架 (Main Layout) - 保持不變
 // ==========================================
 
 const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
@@ -1038,23 +993,18 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
 
   return (
     <>
-      {/* Mobile Overlay */}
       <div 
         className={`fixed inset-0 bg-black/20 z-20 lg:hidden transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setIsOpen(false)}
       />
-      
-      {/* Sidebar */}
       <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-100 z-30 transform transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-slate-50 flex items-center gap-3">
-          {/* LOGO 區域 (綜合規劃股業務儀表板) */}
           <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-rose-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-200">
              <span className="font-bold text-xl">綜</span>
           </div>
           <div>
              <h1 className="font-bold text-slate-800 text-sm leading-tight">綜合規劃股<br/>業務儀表板</h1>
           </div>
-          {/* Mobile Close Button */}
           <button className="lg:hidden ml-auto text-slate-400" onClick={() => setIsOpen(false)}>
              <X size={20} />
           </button>
@@ -1076,7 +1026,6 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
             </button>
           ))}
         </nav>
-
         <div className="absolute bottom-0 w-full p-6 text-xs text-slate-300 text-center border-t border-slate-50">
            Taipei City Government<br/>Social Welfare Dashboard
         </div>
@@ -1086,7 +1035,7 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
 };
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState('welfare'); // 'welfare' or 'housing'
+  const [activeTab, setActiveTab] = useState('welfare'); 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
@@ -1094,14 +1043,12 @@ const App = () => {
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
       
       <div className="flex-1 lg:ml-64 min-h-screen flex flex-col">
-         {/* Mobile Header */}
          <div className="lg:hidden bg-white px-4 py-3 flex items-center gap-3 border-b border-slate-100 sticky top-0 z-10">
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500">
                <Menu size={24}/>
             </button>
             <span className="font-bold text-slate-700">綜合規劃股業務儀表板</span>
          </div>
-
          <main className="flex-1 p-6 lg:p-10 max-w-[1600px] mx-auto w-full">
             {activeTab === 'welfare' && <SocialWelfareView />}
             {activeTab === 'housing' && <SocialHousingVulnerabilityView />}
