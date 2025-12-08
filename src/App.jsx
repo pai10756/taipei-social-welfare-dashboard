@@ -34,7 +34,14 @@ const parseData = (text, headerKeyword = null) => {
   if (lines.length === 0) return [];
   let separator = lines[0].includes('\t') ? '\t' : ',';
   if (headerKeyword) {
-    const headerIndex = lines.findIndex(line => line.includes(headerKeyword));
+  const keywords = Array.isArray(headerKeyword)
+    ? headerKeyword
+    : [headerKeyword];
+
+  const headerIndex = lines.findIndex(line =>
+    keywords.some(k => line.replace(/\uFEFF/g, "").includes(k))
+  );
+
     if (headerIndex !== -1) {
       lines = lines.slice(headerIndex);
       separator = lines[0].includes('\t') ? '\t' : ',';
@@ -678,7 +685,10 @@ const HousingDashboard = () => {
         const text = await res.text();
 
         // 指定「社宅名稱」這一列是標題列，避免抓錯 header
-        const rawData = parseData(text, "社宅名稱");
+        const rawData = parseData(
+  text,
+  ["社宅名稱", "社宅", "名稱"]  // 支援多關鍵詞，只要有一個符合即可
+);
 
         // 取出所有社宅名稱
         const projects = [
@@ -1240,7 +1250,11 @@ const App = () => {
           {/* Logo Area */}
           <div className="h-24 flex items-center px-6 border-b border-slate-100">
              <div className="flex items-center gap-3">
-                 <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-200">綜</div>
+                 <img
+  src={LOGO_URL}
+  alt="logo"
+  className="w-10 h-10 rounded-xl object-cover shadow-lg shadow-indigo-200"
+/>
                  <div className="flex flex-col">
                     <h1 className="text-lg font-black text-slate-800 leading-tight">綜合規劃股</h1>
                     <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Dashboard</span>
