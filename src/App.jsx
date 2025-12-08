@@ -131,6 +131,57 @@ const parsePopulationData = (text) => {
   });
 };
 
+// === 社宅弱勢專用 CSV 工具 ===
+// A=0, B=1, ... Z=25
+const letterToIndex = (letter) => letter.toUpperCase().charCodeAt(0) - 65;
+
+// 原始 CSV → { headers:[], rows:[[]] }
+const parseCsvRaw = (text) => {
+  if (!text) return { headers: [], rows: [] };
+  let lines = text.split('\n').filter((line) => line.trim() !== '');
+  if (!lines.length) return { headers: [], rows: [] };
+
+  const separator = lines[0].includes('\t') ? '\t' : ',';
+
+  const parseLine = (line) => {
+    const result = [];
+    let start = 0;
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === separator && !inQuotes) {
+        let val = line.substring(start, i);
+        val = val.replace(/^"|"$/g, '').replace(/^\uFEFF/, '').trim();
+        result.push(val);
+        start = i + 1;
+      }
+    }
+    let lastVal = line.substring(start);
+    lastVal = lastVal.replace(/^"|"$/g, '').replace(/^\uFEFF/, '').trim();
+    result.push(lastVal);
+
+    return result;
+  };
+
+  const headers = parseLine(lines[0]);
+  const rows = lines.slice(1).map(parseLine);
+  return { headers, rows };
+};
+
+// 優先用標題關鍵字找欄，找不到就用欄位字母當 fallback
+const findIndexByKeyword = (headers, keywords, fallbackLetter) => {
+  let idx = headers.findIndex((h) => {
+    const clean = (h || '').replace(/\s/g, '');
+    return keywords.some((k) => clean.includes(k));
+  });
+  if (idx !== -1) return idx;
+  if (fallbackLetter) return letterToIndex(fallbackLetter);
+  return -1;
+};
+
 // ==========================================
 // 子元件：社福設施 (WelfareDashboard) — 原樣保留
 // ==========================================
@@ -948,20 +999,19 @@ const WelfareDashboard = () => {
 };
 
 // ==========================================
-// 子元件：社宅弱勢 (HousingDashboard) — 依你規格重做
+// 子元件：社宅弱勢 (HousingDashboard)
 // ==========================================
 const HousingDashboard = () => {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState([]);           // 解析後的 record
   const [filteredData, setFilteredData] = useState([]);
   const [selectedProjects, setSelectedProjects] = useState([]);
   const [showFilter, setShowFilter] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [housingNameKey, setHousingNameKey] = useState('社宅名稱');
 
   const HOUSING_CSV_URL =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv";
 
-  // 載入 CSV
+  // 讀取 CSV
   useEffect(() => {
     const fetchHousingData = async () => {
       try {
@@ -969,35 +1019,48 @@ const HousingDashboard = () => {
         const res = await fetch(HOUSING_CSV_URL);
         const text = await res.text();
 
-        // 指定「社宅名稱」這一列是標題列，避免抓錯 header
-        const rawData = parseData(text, "社宅名稱");
+        // 直接用原始 CSV 解析，避免欄位名稱對不起來
+        const { headers, rows } = parseCsvRaw(text);
 
-        // 自動偵測「社宅名稱」欄位 key
-        if (rawData.length > 0) {
-          const first = rawData[0];
-          const nameKey =
-            Object.keys(first).find(k => k.includes('社宅')) || '社宅名稱';
-          setHousingNameKey(nameKey);
-        }
+        // 依「欄位名稱 + 欄位字母」雙保險找 index
+        const idxSocName = findIndexByKeyword(headers, ["社宅名稱"], null);
+        const idxEld = findIndexByKeyword(headers, ["獨老", "列冊獨老"], "M"); // M 欄
+        const idxDisFlag = findIndexByKeyword(
+          headers,
+          ["是否有身障資格", "身心障礙", "身障"],
+          "H" // H 欄
+        );
+        const idxLowType = findIndexByKeyword(
+          headers,
+          ["低收或中低收資格", "低收入", "中低收入"],
+          "L" // L 欄
+        );
+        const idxHh = findIndexByKeyword(headers, ["戶號編碼", "戶號"], "Z"); // Z 欄
+        const idxDisType = findIndexByKeyword(headers, ["障礙類別"], "J");     // J 欄
 
-        const nameKey =
-          rawData.length > 0
-            ? (Object.keys(rawData[0]).find(k => k.includes('社宅')) || '社宅名稱')
-            : '社宅名稱';
+        // 把每列轉成我們好用的物件
+        const records = rows.map((row) => ({
+          project: (row[idxSocName] || "").trim(),  // 社宅名稱
+          eldFlag: row[idxEld] || "",               // M 欄 列冊獨老
+          disFlag: row[idxDisFlag] || "",           // H 欄 是否有身障資格
+          lowType: row[idxLowType] || "",           // L 欄 低收或中低收資格
+          hh: (row[idxHh] || "").trim(),            // Z 欄 戶號編碼
+          disType: row[idxDisType] || "",           // J 欄 障礙類別
+        }));
 
+        setData(records);
+        setFilteredData(records);
+
+        // 初始全部社宅都勾選
         const projects = [
-          ...new Set(
-            rawData
-              .map((r) => (r[nameKey] || "").trim())
-              .filter((n) => n && n !== nameKey)
-          ),
+          ...new Set(records.map((r) => r.project).filter((n) => n)),
         ].sort();
-
-        setData(rawData);
-        setFilteredData(rawData);
         setSelectedProjects(projects);
       } catch (e) {
         console.error("Housing CSV 載入失敗：", e);
+        setData([]);
+        setFilteredData([]);
+        setSelectedProjects([]);
       } finally {
         setLoading(false);
       }
@@ -1008,17 +1071,20 @@ const HousingDashboard = () => {
 
   // 依社宅名稱過濾
   useEffect(() => {
-    if (!data.length) return;
+    if (!data.length) {
+      setFilteredData([]);
+      return;
+    }
     if (!selectedProjects.length) {
       setFilteredData(data);
       return;
     }
 
     const filtered = data.filter((r) =>
-      selectedProjects.includes((r[housingNameKey] || "").trim())
+      selectedProjects.includes(r.project)
     );
     setFilteredData(filtered);
-  }, [data, selectedProjects, housingNameKey]);
+  }, [data, selectedProjects]);
 
   const toggleProject = (p) => {
     setSelectedProjects((prev) =>
@@ -1026,97 +1092,85 @@ const HousingDashboard = () => {
     );
   };
 
-  // 統計邏輯：完全對應你列出的 (1)~(6)
+  // 統計邏輯
   const stats = useMemo(() => {
-    if (!filteredData.length) {
-      return {
-        eld: { people: 0, house: 0 },
-        dis: { people: 0, house: 0 },
-        low: { people: 0, house: 0 },
-        midLow: { people: 0, house: 0 },
-        lowIncomeStructure: { "0類": 0, "1類": 0, "2類": 0, "3類": 0, "4類": 0 },
-        disTypeStats: {}
-      };
-    }
+    let eldPeople = 0,
+      disPeople = 0,
+      lowPeople = 0,
+      midLowPeople = 0;
 
-    // 依欄位名稱關鍵字自動對應 M/H/L/J/Z
-    const first = filteredData[0];
-    const findKey = (keywords) =>
-      Object.keys(first).find(k => keywords.some(w => k.includes(w))) || '';
-
-    const eldKey     = findKey(['獨老']);                 // M欄：列冊獨老
-    const disFlagKey = findKey(['身障','障礙','資格']);   // H欄：是否有身障資格
-    const lowKey     = findKey(['低收','中低收']);        // L欄：低收或中低收資格
-    const disTypeKey = findKey(['障礙類別']);             // J欄：障礙類別
-    const hhKey      = findKey(['戶號']);                 // Z欄：戶號編碼
-
-    let eldPeople = 0, disPeople = 0, lowPeople = 0, midLowPeople = 0;
-    
+    // 用於計算戶數的 Set
     const eldHouseSet = new Set();
     const disHouseSet = new Set();
     const lowHouseSet = new Set();
     const midLowHouseSet = new Set();
 
-    const lowIncomeMap = { "0類": 0, "1類": 0, "2類": 0, "3類": 0, "4類": 0 };
-    const disTypeMap = {};
+    // 類別統計 Map
+    const lowIncomeMap = { "0類": 0, "1類": 0, "2類": 0, "3類": 0, "4類": 0 }; // 戶數
+    const disTypeMap = {}; // 人數
 
-    // 先掃一次：人數＋戶數
     filteredData.forEach((r) => {
-      const hh = (r[hhKey] || "").trim();
-      const eldVal = (r[eldKey] || "").trim();
-      const disVal = (r[disFlagKey] || "").trim();
-      const lowVal = (r[lowKey] || "").trim();
-      const disType = (r[disTypeKey] || "").trim();
+      const hh = (r.hh || "").trim();
 
-      // (1) 列冊獨老：M欄 = "是"
+      // 1. 列冊獨老 (M欄值為 "是")
+      const eldVal = (r.eldFlag || "").trim();
       const isEld = eldVal.includes("是");
       if (isEld) {
         eldPeople++;
         if (hh) eldHouseSet.add(hh);
       }
 
-      // (2) 身心障礙：H欄 = "V"
-      const isDis = disVal === "V" || disVal === "v" || disVal.includes("V");
+      // 2. 身心障礙 (H欄 "V")
+      const disVal = (r.disFlag || "").trim();
+      const isDis = /v/i.test(disVal); // 放寬：只要含 V/v
       if (isDis) {
         disPeople++;
         if (hh) disHouseSet.add(hh);
 
-        // (6) 身心障礙類別統計：只對 H欄有資格的人，看 J欄障礙類別
-        if (disType) {
-          disTypeMap[disType] = (disTypeMap[disType] || 0) + 1;
+        // 6. 身心障礙類別統計：依人數
+        const dType = (r.disType || "").trim();
+        if (dType) {
+          disTypeMap[dType] = (disTypeMap[dType] || 0) + 1;
         }
       }
 
-      // (3)(4) 低收 / 中低收：L欄
-      const isLow =
-        ["0類", "1類", "2類", "3類", "4類"].some(t => lowVal.includes(t));
-      const isMidLow = lowVal.includes("中低收");
+      // 3 & 4. 低收 / 中低收 (L 欄)
+      const lowType = (r.lowType || "").trim();
 
+      // 低收入戶：0類~4類 (人數＋戶數)
+      const isLow = ["0類", "1類", "2類", "3類", "4類"].some((t) =>
+        lowType.includes(t)
+      );
       if (isLow) {
         lowPeople++;
         if (hh) lowHouseSet.add(hh);
       }
-      if (isMidLow) {
+
+      // 中低收入戶 (人數＋戶數)
+      if (lowType.includes("中低收")) {
         midLowPeople++;
         if (hh) midLowHouseSet.add(hh);
       }
     });
 
-    // (5) 低收入戶類別結構：以「戶」為單位統計 0-4 類別
-    const houseLowTypeMap = {}; // hh -> 類別(0類~4類)
+    // 重新計算 低收入戶「戶」的類別結構
+    const houseLowTypeMap = {}; // hh -> 類別（0~4類）
+
     filteredData.forEach((r) => {
-      const hh = (r[hhKey] || "").trim();
-      const lowVal = (r[lowKey] || "").trim();
+      const hh = (r.hh || "").trim();
+      const lowType = (r.lowType || "").trim();
       if (!hh) return;
-      if (["0類", "1類", "2類", "3類", "4類"].some(t => lowVal.includes(t))) {
-        const match = lowVal.match(/[0-4]類/);
+
+      if (["0類", "1類", "2類", "3類", "4類"].some((t) => lowType.includes(t))) {
+        const match = lowType.match(/[0-4]類/);
         if (match) {
           houseLowTypeMap[hh] = match[0];
         }
       }
     });
+
     Object.values(houseLowTypeMap).forEach((type) => {
-      if (lowIncomeMap[type] !== undefined) lowIncomeMap[type] += 1;
+      if (lowIncomeMap[type] !== undefined) lowIncomeMap[type]++;
     });
 
     return {
@@ -1125,48 +1179,48 @@ const HousingDashboard = () => {
       low: { people: lowPeople, house: lowHouseSet.size },
       midLow: { people: midLowPeople, house: midLowHouseSet.size },
       lowIncomeStructure: lowIncomeMap,
-      disTypeStats: disTypeMap
+      disTypeStats: disTypeMap,
     };
   }, [filteredData]);
 
-  // (5) 低收入戶類別結構長條圖資料
-  const lowIncomeChartData = Object.entries(stats.lowIncomeStructure).map(([name, value]) => ({
-    name,
-    value,
-    percent: stats.low.house > 0 ? (value / stats.low.house * 100).toFixed(1) : 0
-  }));
+  // 圖表資料
+  const lowIncomeChartData = Object.entries(stats.lowIncomeStructure).map(
+    ([name, value]) => ({
+      name,
+      value,
+      percent:
+        stats.low.house > 0
+          ? ((value / stats.low.house) * 100).toFixed(1)
+          : 0,
+    })
+  );
 
-  // (6) 身心障礙類別統計長條圖資料
   const disTypeChartData = Object.entries(stats.disTypeStats)
     .map(([name, value]) => ({
-        name,
-        value,
-        percent: stats.dis.people > 0 ? (value / stats.dis.people * 100).toFixed(1) : 0
+      name,
+      value,
+      percent:
+        stats.dis.people > 0
+          ? ((value / stats.dis.people) * 100).toFixed(1)
+          : 0,
     }))
     .sort((a, b) => b.value - a.value);
 
-  const allProjectNames = useMemo(
-    () => [
-      ...new Set(
-        data.map(r => (r[housingNameKey] || "").trim()).filter(n => n)
-      )
-    ].sort(),
-    [data, housingNameKey]
-  );
-
+  // UI
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* 標題列 + 篩選社宅（可選擇要納入哪些社宅一起統計） */}
+      {/* 標題與篩選列 */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-800 mb-1">
             社宅弱勢數據分析
           </h2>
           <div className="text-sm text-slate-500">
-            資料來源：社宅弱勢名冊 CSV（即時讀取）
+            資料來源：Google Sheet CSV |{" "}
+            {new Date().toLocaleDateString("zh-TW")}
           </div>
         </div>
-        
+
         <div className="relative">
           <button
             onClick={() => setShowFilter((p) => !p)}
@@ -1180,15 +1234,25 @@ const HousingDashboard = () => {
             </span>
             <ChevronDown
               size={16}
-              className={`transition-transform ${showFilter ? "rotate-180" : ""}`}
+              className={`transition-transform ${
+                showFilter ? "rotate-180" : ""
+              }`}
             />
           </button>
-          
+
           {showFilter && (
             <div className="absolute right-0 mt-2 w-64 max-h-80 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2">
               <div className="flex justify-between px-2 py-1 mb-1 text-xs text-slate-500">
                 <button
-                  onClick={() => setSelectedProjects(allProjectNames)}
+                  onClick={() =>
+                    setSelectedProjects(
+                      [
+                        ...new Set(
+                          data.map((r) => r.project).filter((n) => n)
+                        ),
+                      ].sort()
+                    )
+                  }
                   className="hover:text-indigo-600"
                 >
                   全選
@@ -1200,109 +1264,99 @@ const HousingDashboard = () => {
                   清空
                 </button>
               </div>
-              {allProjectNames.map(p => (
-                <label
-                  key={p}
-                  className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedProjects.includes(p)}
-                    onChange={() => toggleProject(p)}
-                    className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
-                  />
-                  <span className="text-slate-700">{p}</span>
-                </label>
-              ))}
+
+              {[...new Set(data.map((r) => r.project).filter((n) => n))]
+                .sort()
+                .map((p) => (
+                  <label
+                    key={p}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedProjects.includes(p)}
+                      onChange={() => toggleProject(p)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                    />
+                    <span className="text-slate-700">{p}</span>
+                  </label>
+                ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* 載入中提示 */}
-      {loading && (
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-2 text-slate-500 text-sm">
-          <Loader2 className="animate-spin" size={16} />
-          正在載入社宅弱勢資料...
-        </div>
-      )}
-
-      {/* (1)~(4) 四大弱勢族群總覽卡片 */}
+      {/* 四大卡片區 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatsCard 
-          title="列冊獨老" 
-          people={stats.eld.people} 
-          house={stats.eld.house} 
-          icon={<User size={24}/>} 
+        <StatsCard
+          title="列冊獨老"
+          people={stats.eld.people}
+          house={stats.eld.house}
+          icon={<User size={24} />}
           color="orange"
         />
-        <StatsCard 
-          title="身心障礙" 
-          people={stats.dis.people} 
-          house={stats.dis.house} 
-          icon={<Accessibility size={24}/>} 
+        <StatsCard
+          title="身心障礙"
+          people={stats.dis.people}
+          house={stats.dis.house}
+          icon={<Accessibility size={24} />}
           color="rose"
         />
-        <StatsCard 
-          title="低收入戶" 
-          people={stats.low.people} 
-          house={stats.low.house} 
-          icon={<HandCoins size={24}/>} 
+        <StatsCard
+          title="低收入戶"
+          people={stats.low.people}
+          house={stats.low.house}
+          icon={<HandCoins size={24} />}
           color="indigo"
         />
-        <StatsCard 
-          title="中低收入戶" 
-          people={stats.midLow.people} 
-          house={stats.midLow.house} 
-          icon={<HeartHandshake size={24}/>} 
+        <StatsCard
+          title="中低收入戶"
+          people={stats.midLow.people}
+          house={stats.midLow.house}
+          icon={<HeartHandshake size={24} />}
           color="blue"
         />
       </div>
 
-      {/* (5)(6) 兩個長條圖區塊 */}
+      {/* 圖表區 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 低收入戶類別結構 (0–4 類，以戶數為單位) */}
+        {/* 低收入戶類別結構 */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-1 h-5 bg-indigo-500 rounded-full"></div>
             <h3 className="font-bold text-slate-700">
               低收入戶類別結構 (0–4類)
             </h3>
-            <span className="text-xs text-slate-400 ml-auto">
-              單位：戶（統計母數 = 低收入戶戶數）
-            </span>
+            <span className="text-xs text-slate-400 ml-auto">單位：戶</span>
           </div>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={lowIncomeChartData}
-                margin={{top: 20, right: 30, left: 0, bottom: 5}}
+                margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="#f1f5f9"
+                />
                 <XAxis
                   dataKey="name"
-                  tick={{fill:'#64748b', fontSize:12}}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{fill:'#64748b', fontSize:12}}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <Tooltip
-                  cursor={{fill:'#f8fafc'}}
+                  cursor={{ fill: "#f8fafc" }}
                   contentStyle={{
-                    borderRadius:12,
-                    border:'none',
-                    boxShadow:'0 4px 12px rgba(0,0,0,0.1)'
-                  }}
-                  formatter={(value, name, props) => {
-                    const { payload } = props;
-                    return [
-                      `${value} 戶 (${payload.percent}%)`,
-                      '戶數'
-                    ];
+                    borderRadius: 12,
+                    border: "none",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                   }}
                 />
                 <Bar
@@ -1311,14 +1365,12 @@ const HousingDashboard = () => {
                   radius={[4, 4, 0, 0]}
                   barSize={40}
                 >
-                  {/* 條上顯示「戶數」 */}
                   <LabelList
                     dataKey="value"
                     position="top"
                     fill="#6366F1"
                     fontSize={12}
                   />
-                  {/* 條上顯示「百分比」 */}
                   <LabelList
                     dataKey="percent"
                     position="top"
@@ -1333,16 +1385,12 @@ const HousingDashboard = () => {
           </div>
         </div>
 
-        {/* 身心障礙類別統計 (人數為單位) */}
+        {/* 身心障礙類別統計 */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-1 h-5 bg-rose-500 rounded-full"></div>
-            <h3 className="font-bold text-slate-700">
-              身心障礙類別統計
-            </h3>
-            <span className="text-xs text-slate-400 ml-auto">
-              單位：人（統計母數 = 身心障礙人數）
-            </span>
+            <h3 className="font-bold text-slate-700">身心障礙類別統計</h3>
+            <span className="text-xs text-slate-400 ml-auto">單位：人</span>
           </div>
           <div className="h-80 overflow-y-auto custom-scrollbar pr-2">
             <ResponsiveContainer
@@ -1352,31 +1400,28 @@ const HousingDashboard = () => {
               <BarChart
                 data={disTypeChartData}
                 layout="vertical"
-                margin={{top: 5, right: 30, left: 40, bottom: 5}}
+                margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
               >
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9"/>
-                <XAxis type="number" hide/>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  horizontal={false}
+                  stroke="#f1f5f9"
+                />
+                <XAxis type="number" hide />
                 <YAxis
                   dataKey="name"
                   type="category"
                   width={80}
-                  tick={{fill:'#64748b', fontSize:12}}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <Tooltip
-                  cursor={{fill:'#f8fafc'}}
+                  cursor={{ fill: "#f8fafc" }}
                   contentStyle={{
-                    borderRadius:12,
-                    border:'none',
-                    boxShadow:'0 4px 12px rgba(0,0,0,0.1)'
-                  }}
-                  formatter={(value, name, props) => {
-                    const { payload } = props;
-                    return [
-                      `${value} 人 (${payload.percent}%)`,
-                      '人數'
-                    ];
+                    borderRadius: 12,
+                    border: "none",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                   }}
                 />
                 <Bar
@@ -1385,14 +1430,12 @@ const HousingDashboard = () => {
                   radius={[0, 4, 4, 0]}
                   barSize={20}
                 >
-                  {/* 條右側顯示「人數」 */}
                   <LabelList
                     dataKey="value"
                     position="right"
                     fill="#F43F5E"
                     fontSize={12}
                   />
-                  {/* 條右側顯示「百分比」 */}
                   <LabelList
                     dataKey="percent"
                     position="right"
@@ -1410,6 +1453,7 @@ const HousingDashboard = () => {
     </div>
   );
 };
+
 
 // 共用：弱勢統計卡片
 const StatsCard = ({ title, people, house, icon, color }) => (
