@@ -61,11 +61,9 @@ const parseData = (text, headerKeyword = null) => {
   };
 
   const headers = parseLine(lines[0]);
-  // 為了處理重複標題或無標題情況，我們回傳陣列格式的 raw data 供後續特定邏輯使用
-  // 但為了相容舊程式碼，這裡回傳物件陣列，並附帶一個 _raw 屬性存原始陣列
   return lines.slice(1).map(line => {
     const values = parseLine(line);
-    const entry = { _raw: values }; // 保留原始陣列以供 Index 存取
+    const entry = {};
     headers.forEach((header, index) => {
       const cleanHeader = header.replace(/^\uFEFF/, '').trim();
       if (cleanHeader) {
@@ -129,7 +127,7 @@ const COLORS = {
 };
 
 // ==========================================
-// 1. 社福設施頁面 (SocialWelfareView) - 保持不變
+// 1. 社福設施頁面 (SocialWelfareView)
 // ==========================================
 const SocialWelfareView = () => {
   const [csvData, setCsvData] = useState([]); 
@@ -137,7 +135,6 @@ const SocialWelfareView = () => {
   const [childcareNowData, setChildcareNowData] = useState([]);
   const [childcareFutureData, setChildcareFutureData] = useState([]);
   const [telecomData, setTelecomData] = useState([]); 
-  const [popFutureTotal, setPopFutureTotal] = useState(0); 
   const [loading, setLoading] = useState(true);
   const [pmSearchTerm, setPmSearchTerm] = useState('');
   const [selectedBase, setSelectedBase] = useState(null);
@@ -176,12 +173,11 @@ const SocialWelfareView = () => {
         const POP_FUTURE_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRwO5RTzYCCo9PiNc0kl-rCWZsYlnVsw89z8QxC61F9CZyjEDO_nCpJaODaJVl5k4_xC3yIHRYTypVN/pub?gid=1074300767&single=true&output=csv';
         const TELECOM_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRwO5RTzYCCo9PiNc0kl-rCWZsYlnVsw89z8QxC61F9CZyjEDO_nCpJaODaJVl5k4_xC3yIHRYTypVN/pub?gid=1894885880&single=true&output=csv';
 
-        const [resMain, resPop, resNow, resFuture, resPopFut, resTelecom] = await Promise.all([
+        const [resMain, resPop, resNow, resFuture, resTelecom] = await Promise.all([
           fetch(MAIN_SHEET_URL).then(r => r.text()),
           fetch(POPULATION_URL).then(r => r.text()),
           fetch(CHILDCARE_NOW_URL).then(r => r.text()),
           fetch(CHILDCARE_FUTURE_URL).then(r => r.text()),
-          fetch(POP_FUTURE_URL).then(r => r.text()),
           fetch(TELECOM_URL).then(r => r.text())
         ]);
 
@@ -189,7 +185,6 @@ const SocialWelfareView = () => {
         setPopData(parsePopulationData(resPop));
         setChildcareNowData(parseData(resNow));
         setChildcareFutureData(parseData(resFuture));
-        setPopFutureTotal(parseCellB15(resPopFut));
         setTelecomData(parseData(resTelecom));
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -771,18 +766,8 @@ const SocialHousingVulnerabilityView = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // [已更新]: 使用您提供的新 URL
+  // Updated URL
   const VULNERABLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv';
-
-  // 欄位索引對應 (0-based Index)
-  // M=12, H=7, Z=25, L=11, J=9
-  const COL_INDEX = {
-    elderly: 12,    // M欄
-    disability: 7,  // H欄
-    houseNo: 25,    // Z欄
-    welfare: 11,    // L欄
-    disType: 9      // J欄
-  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -803,6 +788,17 @@ const SocialHousingVulnerabilityView = () => {
   const stats = useMemo(() => {
     if (data.length === 0) return null;
 
+    // 1. 動態尋找欄位 Key (避免欄位移位導致抓不到值)
+    const findKey = (row, keywords) => {
+        return Object.keys(row).find(k => keywords.some(kw => k.includes(kw)));
+    };
+    const sample = data[0];
+    const keyHouse = findKey(sample, ['戶號', '編碼', 'Z']); 
+    const keyElderly = findKey(sample, ['獨老', 'M']);
+    const keyDisability = findKey(sample, ['身心障礙', 'H']);
+    const keyWelfare = findKey(sample, ['福利', 'L']);
+    const keyDisType = findKey(sample, ['障礙類別', 'J']);
+
     // 初始化計數器
     let countElderlyPeople = 0;
     const setElderlyHouse = new Set();
@@ -817,18 +813,14 @@ const SocialHousingVulnerabilityView = () => {
     const disTypeMap = {}; 
 
     data.forEach(row => {
-      // 為了避免標題名稱對不上的問題，我們優先使用 _raw (原始陣列) 搭配欄位索引
-      // 如果 row._raw 存在，使用 index 取值；否則嘗試用 key (fallback)
-      const getValue = (idx, fallbackKey) => {
-        if (row._raw && row._raw[idx] !== undefined) return String(row._raw[idx]).trim();
-        return String(row[Object.keys(row).find(k => k.includes(fallbackKey))] || '').trim();
-      };
-
-      const houseNo = getValue(COL_INDEX.houseNo, '戶號');
-      const valElderly = getValue(COL_INDEX.elderly, '獨老');
-      const valDisability = getValue(COL_INDEX.disability, '身心障礙');
-      const valWelfare = getValue(COL_INDEX.welfare, '福利');
-      const valDisType = getValue(COL_INDEX.disType, '障礙類別');
+      // 取得並正規化戶號 (去除前後空白)
+      const rawHouse = keyHouse ? row[keyHouse] : '';
+      const houseNo = rawHouse ? String(rawHouse).trim() : '';
+      
+      const valElderly = keyElderly ? String(row[keyElderly] || '').trim() : '';
+      const valDisability = keyDisability ? String(row[keyDisability] || '').trim() : '';
+      const valWelfare = keyWelfare ? String(row[keyWelfare] || '').trim() : '';
+      const valDisType = keyDisType ? String(row[keyDisType] || '').trim() : '';
 
       // (1) 獨老
       if (valElderly === '是' || valElderly === 'V') {
@@ -840,37 +832,48 @@ const SocialHousingVulnerabilityView = () => {
       if (valDisability === 'V' || valDisability === '是') {
         countDisabilityPeople++;
         if (houseNo) setDisabilityHouse.add(houseNo);
-        // 身障類別
+        // 身障類別 (人數)
         if (valDisType) {
           disTypeMap[valDisType] = (disTypeMap[valDisType] || 0) + 1;
         }
       }
 
-      // (3)(4) 福利身分
+      // (3)(4) 福利身分 & (5) 類別結構
       if (valWelfare.includes('中低收')) {
         countMidLowPeople++;
         if (houseNo) setMidLowHouse.add(houseNo);
-      } else if (['0類', '1類', '2類', '3類', '4類'].some(t => valWelfare.includes(t)) || valWelfare.match(/[0-4]類/)) {
+      } else if (
+          ['0類', '1類', '2類', '3類', '4類'].some(t => valWelfare.includes(t)) || 
+          valWelfare.match(/[0-4]類/) ||
+          (valWelfare.includes('低收') && valWelfare.match(/[0-4]/)) // 防呆: "低收3"
+      ) {
         countLowIncomePeople++;
         if (houseNo) setLowIncomeHouse.add(houseNo);
 
-        const match = valWelfare.match(/[0-4]類/);
-        const type = match ? match[0] : valWelfare;
+        // 判斷類別 (0-4類)
+        const match = valWelfare.match(/[0-4]類/) || valWelfare.match(/[0-4]/);
+        let type = match ? match[0] : valWelfare;
+        // 統一格式，若只有數字則補上"類"
+        if (type.match(/^[0-4]$/)) type = type + "類";
+
         if (!lowIncomeTypeMap[type]) lowIncomeTypeMap[type] = new Set();
         if (houseNo) lowIncomeTypeMap[type].add(houseNo);
       }
     });
 
+    // 整理圖表數據：低收入戶 (戶數)
     const lowIncomeChartData = Object.entries(lowIncomeTypeMap).map(([name, set]) => ({
-      name, value: set.size, fullValue: set.size
+      name, value: set.size
     })).sort((a, b) => a.name.localeCompare(b.name));
     
-    const totalLowIncomeHouse = lowIncomeChartData.reduce((acc, c) => acc + c.value, 0);
+    // 計算百分比
+    const totalLowIncomeHouseForChart = lowIncomeChartData.reduce((acc, c) => acc + c.value, 0);
     lowIncomeChartData.forEach(d => {
-      d.percent = totalLowIncomeHouse > 0 ? ((d.value / totalLowIncomeHouse) * 100).toFixed(1) + '%' : '0%';
+      d.percent = totalLowIncomeHouseForChart > 0 ? ((d.value / totalLowIncomeHouseForChart) * 100).toFixed(1) + '%' : '0%';
       d.label = `${d.value}戶 (${d.percent})`;
     });
 
+    // 整理圖表數據：身障類別 (人數)
     const disChartData = Object.entries(disTypeMap).map(([name, value]) => ({
       name, value
     })).sort((a, b) => b.value - a.value); 
@@ -943,7 +946,10 @@ const SocialHousingVulnerabilityView = () => {
                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
                  <XAxis type="number" hide />
                  <YAxis dataKey="name" type="category" width={50} tick={{fontSize: 12, fill: '#64748b'}} />
-                 <Tooltip cursor={{fill: '#f8fafc'}} />
+                 <Tooltip 
+                    cursor={{fill: '#f8fafc'}}
+                    formatter={(value) => [value, '戶數']} 
+                 />
                  <Bar dataKey="value" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={30}>
                     <LabelList dataKey="label" position="right" fill="#64748b" fontSize={12} />
                  </Bar>
@@ -965,7 +971,10 @@ const SocialHousingVulnerabilityView = () => {
                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
                  <XAxis type="number" hide />
                  <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 11, fill: '#64748b'}} interval={0} />
-                 <Tooltip cursor={{fill: '#f8fafc'}} />
+                 <Tooltip 
+                    cursor={{fill: '#f8fafc'}}
+                    formatter={(value) => [value, '人數']}
+                 />
                  <Bar dataKey="value" fill="#F43F5E" radius={[0, 4, 4, 0]} barSize={20}>
                     <LabelList dataKey="label" position="right" fill="#64748b" fontSize={11} />
                  </Bar>
@@ -982,7 +991,7 @@ const SocialHousingVulnerabilityView = () => {
 
 
 // ==========================================
-// 3. 主框架 (Main Layout) - 保持不變
+// 3. 主框架 (Main Layout)
 // ==========================================
 
 const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
@@ -998,14 +1007,20 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
         onClick={() => setIsOpen(false)}
       />
       <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-100 z-30 transform transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-6 border-b border-slate-50 flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-rose-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-200">
-             <span className="font-bold text-xl">綜</span>
+        <div className="p-6 border-b border-slate-50 flex flex-col items-center gap-4 text-center">
+          {/* Logo 區域 */}
+          <div className="w-24 h-24 bg-white rounded-xl flex items-center justify-center overflow-hidden shadow-sm border border-slate-100">
+             <img 
+               src="綜合規劃股儀表板logo.jpg" 
+               alt="綜合規劃股"
+               className="w-full h-full object-contain"
+             />
           </div>
           <div>
-             <h1 className="font-bold text-slate-800 text-sm leading-tight">綜合規劃股<br/>業務儀表板</h1>
+             <h1 className="font-bold text-slate-800 text-lg leading-tight">綜合規劃股<br/>業務儀表板</h1>
           </div>
-          <button className="lg:hidden ml-auto text-slate-400" onClick={() => setIsOpen(false)}>
+          {/* Mobile Close */}
+          <button className="lg:hidden absolute top-4 right-4 text-slate-400" onClick={() => setIsOpen(false)}>
              <X size={20} />
           </button>
         </div>
