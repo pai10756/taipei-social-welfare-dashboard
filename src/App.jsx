@@ -1067,7 +1067,7 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
           {/* Logo 區域 (純透明底、放大1.5倍、靠近文字) */}
           <div className="w-24 h-24 flex items-center justify-center overflow-visible mb-[-12px]">
              <img 
-               src="綜合規劃股儀表板logo.jpg" 
+               src="綜合規劃股儀表板logo.png" 
                alt="綜合規劃股"
                className="w-full h-full object-contain scale-150"
              />
