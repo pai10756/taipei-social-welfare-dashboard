@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, ComposedChart, ReferenceLine,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, LabelList
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, LabelList, Label
 } from 'recharts';
 
 // ==========================================
@@ -63,7 +63,7 @@ const parseData = (text, headerKeyword = null) => {
   const headers = parseLine(lines[0]);
   return lines.slice(1).map(line => {
     const values = parseLine(line);
-    const entry = {};
+    const entry = { _raw: values }; // 保留原始陣列以供 Index 存取
     headers.forEach((header, index) => {
       const cleanHeader = header.replace(/^\uFEFF/, '').trim();
       if (cleanHeader) {
@@ -699,9 +699,51 @@ const SocialWelfareView = () => {
                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                        <XAxis dataKey="district" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => `${(val * 100).toFixed(0)}%`} />
-                       <Tooltip cursor={{fill: '#f8fafc'}} />
+                       
+                       {/* 修正後的 Tooltip：完全還原原設計樣式 */}
+                       <Tooltip 
+                          cursor={{fill: '#f8fafc'}}
+                          content={({ active, payload, label }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm w-64">
+                                  <h4 className="font-bold text-slate-800 text-lg mb-2">{label}</h4>
+                                  
+                                  {/* Section 1: 現況 */}
+                                  <div className="mb-3">
+                                    <div className="flex justify-between text-xs text-slate-500 mb-1">
+                                      <span>現況 (vs 0-1歲人口)</span>
+                                      <span>{data.popNow}人</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-blue-500 font-medium">
+                                      <span>容量 {data.capacityNow}</span>
+                                      <span className="font-bold text-lg">{(data.coverageNow * 100).toFixed(1)}%</span>
+                                    </div>
+                                  </div>
+                                  
+                                  <hr className="border-slate-100 mb-3"/>
+                                  
+                                  {/* Section 2: 布建後 */}
+                                  <div>
+                                    <div className="flex justify-between text-xs text-slate-500 mb-1">
+                                      <span>布建後 (118年推估)</span>
+                                      <span>{data.futurePop}人</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-teal-500 font-medium">
+                                      <span>總容量 {data.capacityFutureTotal}</span>
+                                      <span className="font-bold text-lg">{(data.coverageFuture * 100).toFixed(1)}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                       />
+
                        <ReferenceLine y={0.10} stroke="#EF4444" strokeDasharray="3 3">
-                          <text x="10" y="10%" dy={-10} fill="#EF4444" fontSize={12} fontWeight="bold">目標 10%</text>
+                          <Label value="目標 10%" position="insideTopLeft" fill="#EF4444" fontSize={12} fontWeight="bold" />
                        </ReferenceLine>
                        <Bar dataKey="coverageNow" name="現況覆蓋率" fill="#60A5FA" barSize={20} radius={[4, 4, 0, 0]} />
                        <Bar dataKey="coverageFuture" name="布建後覆蓋率" fill="#2DD4BF" barSize={20} radius={[4, 4, 0, 0]} />
@@ -766,8 +808,18 @@ const SocialHousingVulnerabilityView = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Updated URL
+  // CSV URL
   const VULNERABLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv';
+
+  // [固定欄位 Index] (避免標題名稱變動導致無資料)
+  // Index從0開始: M=12, H=7, Z=25, L=11, J=9
+  const FIXED_INDICES = {
+    houseNo: 25,    // Z
+    elderly: 12,    // M
+    disability: 7,  // H
+    welfare: 11,    // L
+    disType: 9      // J
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -788,16 +840,14 @@ const SocialHousingVulnerabilityView = () => {
   const stats = useMemo(() => {
     if (data.length === 0) return null;
 
-    // 1. 動態尋找欄位 Key (避免欄位移位導致抓不到值)
-    const findKey = (row, keywords) => {
-        return Object.keys(row).find(k => keywords.some(kw => k.includes(kw)));
-    };
+    // 嘗試動態找標題
+    const findKey = (row, keywords) => Object.keys(row).find(k => keywords.some(kw => k.includes(kw)));
     const sample = data[0];
-    const keyHouse = findKey(sample, ['戶號', '編碼', 'Z']); 
-    const keyElderly = findKey(sample, ['獨老', 'M']);
-    const keyDisability = findKey(sample, ['身心障礙', 'H']);
-    const keyWelfare = findKey(sample, ['福利', 'L']);
-    const keyDisType = findKey(sample, ['障礙類別', 'J']);
+    const kHouse = findKey(sample, ['戶號', '編碼', 'Z']); 
+    const kElderly = findKey(sample, ['獨老', 'M']);
+    const kDisability = findKey(sample, ['身心障礙', 'H']);
+    const kWelfare = findKey(sample, ['福利', 'L']);
+    const kDisType = findKey(sample, ['障礙類別', 'J']);
 
     // 初始化計數器
     let countElderlyPeople = 0;
@@ -813,14 +863,18 @@ const SocialHousingVulnerabilityView = () => {
     const disTypeMap = {}; 
 
     data.forEach(row => {
-      // 取得並正規化戶號 (去除前後空白)
-      const rawHouse = keyHouse ? row[keyHouse] : '';
-      const houseNo = rawHouse ? String(rawHouse).trim() : '';
-      
-      const valElderly = keyElderly ? String(row[keyElderly] || '').trim() : '';
-      const valDisability = keyDisability ? String(row[keyDisability] || '').trim() : '';
-      const valWelfare = keyWelfare ? String(row[keyWelfare] || '').trim() : '';
-      const valDisType = keyDisType ? String(row[keyDisType] || '').trim() : '';
+      // 優先使用標題Key，若無則使用固定Index (raw)
+      const getValue = (key, idx) => {
+        if (key && row[key]) return String(row[key]).trim();
+        if (row._raw && row._raw[idx]) return String(row._raw[idx]).trim();
+        return '';
+      };
+
+      const houseNo = getValue(kHouse, FIXED_INDICES.houseNo);
+      const valElderly = getValue(kElderly, FIXED_INDICES.elderly);
+      const valDisability = getValue(kDisability, FIXED_INDICES.disability);
+      const valWelfare = getValue(kWelfare, FIXED_INDICES.welfare);
+      const valDisType = getValue(kDisType, FIXED_INDICES.disType);
 
       // (1) 獨老
       if (valElderly === '是' || valElderly === 'V') {
@@ -845,19 +899,21 @@ const SocialHousingVulnerabilityView = () => {
       } else if (
           ['0類', '1類', '2類', '3類', '4類'].some(t => valWelfare.includes(t)) || 
           valWelfare.match(/[0-4]類/) ||
-          (valWelfare.includes('低收') && valWelfare.match(/[0-4]/)) // 防呆: "低收3"
+          valWelfare.match(/^[0-4]$/)
       ) {
         countLowIncomePeople++;
         if (houseNo) setLowIncomeHouse.add(houseNo);
 
         // 判斷類別 (0-4類)
         const match = valWelfare.match(/[0-4]類/) || valWelfare.match(/[0-4]/);
-        let type = match ? match[0] : valWelfare;
-        // 統一格式，若只有數字則補上"類"
-        if (type.match(/^[0-4]$/)) type = type + "類";
+        if (match) {
+           let type = match[0];
+           // 若只有數字則補上"類" (例: "2" -> "2類")
+           if (type.match(/^[0-4]$/)) type = type + "類";
 
-        if (!lowIncomeTypeMap[type]) lowIncomeTypeMap[type] = new Set();
-        if (houseNo) lowIncomeTypeMap[type].add(houseNo);
+           if (!lowIncomeTypeMap[type]) lowIncomeTypeMap[type] = new Set();
+           if (houseNo) lowIncomeTypeMap[type].add(houseNo);
+        }
       }
     });
 
@@ -1008,18 +1064,17 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
       />
       <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-100 z-30 transform transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-slate-50 flex flex-col items-center gap-4 text-center">
-          {/* Logo 區域 */}
-          <div className="w-24 h-24 bg-white rounded-xl flex items-center justify-center overflow-hidden shadow-sm border border-slate-100">
+          {/* Logo 區域 (純透明底、放大1.5倍、靠近文字) */}
+          <div className="w-24 h-24 flex items-center justify-center overflow-visible mb-[-12px]">
              <img 
                src="綜合規劃股儀表板logo.jpg" 
                alt="綜合規劃股"
-               className="w-full h-full object-contain"
+               className="w-full h-full object-contain scale-150"
              />
           </div>
           <div>
              <h1 className="font-bold text-slate-800 text-lg leading-tight">綜合規劃股<br/>業務儀表板</h1>
           </div>
-          {/* Mobile Close */}
           <button className="lg:hidden absolute top-4 right-4 text-slate-400" onClick={() => setIsOpen(false)}>
              <X size={20} />
           </button>
