@@ -1065,7 +1065,7 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
       <aside className={`fixed top-0 left-0 h-full w-64 bg-white border-r border-slate-100 z-30 transform transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-slate-50 flex flex-col items-center gap-4 text-center">
           {/* Logo 區域 (純透明底、靠近文字) */}
-          <div className="w-21 h-21 flex items-center justify-center overflow-visible mb-[-12px]">
+          <div className="w-20 h-20 flex items-center justify-center overflow-visible mb-[-12px]">
              <img 
                src="綜合規劃股儀表板logo.jpg" 
                alt="綜合規劃股"
