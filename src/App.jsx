@@ -1,3 +1,8 @@
+import Chart from "chart.js/auto";
+import ChartDataLabels from "chartjs-plugin-datalabels";
+
+Chart.register(ChartDataLabels);
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Building2, FileText, CheckCircle2, CheckCircle, Layout, Home, Search, User, 
@@ -653,575 +658,900 @@ const WelfareDashboard = () => {
   );
 };
 
+// 將「儀表板一」的 processData 邏輯搬成純函式，給 React 使用
+const processHousingData = (data = []) => {
+  let totalPop = data.length;
+  let allHouseholds = new Set();
+
+  let elderlyStats = { pop: 0, households: new Set() };
+  let disabilityStats = { pop: 0, households: new Set() };
+  let lowIncomeStats = { pop: 0, households: new Set() };
+  let midLowIncomeStats = { pop: 0, households: new Set() };
+
+  let householdLiType = new Map(); // 用來記錄每一戶最低類別
+  let disabilityTypes = {};
+  let ageGroups = {
+    "0-18歲": 0,
+    "19-64歲": 0,
+    "65-74歲": 0,
+    "75歲以上": 0,
+  };
+
+  // 各社宅比較資料
+  let projectStatsMap = {};
+
+  const getLiPriority = (typeStr) => {
+    if (!typeStr) return 999;
+    if (typeStr.includes("0類")) return 0;
+    if (typeStr.includes("1類")) return 1;
+    if (typeStr.includes("2類")) return 2;
+    if (typeStr.includes("3類")) return 3;
+    if (typeStr.includes("4類")) return 4;
+    return 999;
+  };
+
+  data.forEach((row) => {
+    const householdId = row["戶號編碼"];
+    if (!householdId) return;
+
+    const housingName = (row["社宅名稱"] || "未分類").trim();
+    allHouseholds.add(householdId);
+
+    if (!projectStatsMap[housingName]) {
+      projectStatsMap[housingName] = {
+        totalHH: new Set(),
+        eldHH: new Set(),
+        disHH: new Set(),
+        lowHH: new Set(),
+      };
+    }
+    const p = projectStatsMap[housingName];
+    p.totalHH.add(householdId);
+
+    // 狀態欄位
+    const isElderly =
+      ((row["獨老（列冊獨老）"] ||
+        row["獨老(列冊獨老)"] ||
+        "") as string).trim() === "是";
+    const hasDisability = ((row["是否有身障資格"] || "") as string).trim() !== "";
+    const lowIncomeRaw = (row["低收或中低收資格"] || "") as string;
+    const isLowIncome = ["0類", "1類", "2類", "3類", "4類"].some((t) =>
+      lowIncomeRaw.includes(t)
+    );
+    const isMidLowIncome = lowIncomeRaw.includes("中低收");
+
+    if (isElderly) {
+      elderlyStats.pop++;
+      elderlyStats.households.add(householdId);
+      p.eldHH.add(householdId);
+    }
+
+    if (hasDisability) {
+      disabilityStats.pop++;
+      disabilityStats.households.add(householdId);
+      p.disHH.add(householdId);
+
+      const disType = (row["障礙類別"] || "").trim();
+      if (disType) {
+        disabilityTypes[disType] = (disabilityTypes[disType] || 0) + 1;
+      }
+    }
+
+    if (isLowIncome) {
+      lowIncomeStats.pop++;
+      lowIncomeStats.households.add(householdId);
+      p.lowHH.add(householdId);
+
+      const currentPriority = getLiPriority(lowIncomeRaw);
+      if (currentPriority <= 4) {
+        if (householdLiType.has(householdId)) {
+          if (currentPriority < householdLiType.get(householdId)) {
+            householdLiType.set(householdId, currentPriority);
+          }
+        } else {
+          householdLiType.set(householdId, currentPriority);
+        }
+      }
+    }
+
+    if (isMidLowIncome) {
+      midLowIncomeStats.pop++;
+      midLowIncomeStats.households.add(householdId);
+    }
+
+    const ageStr = row["年齡"];
+    if (ageStr) {
+      const ageVal = parseInt(String(ageStr), 10);
+      if (!isNaN(ageVal)) {
+        if (ageVal <= 18) ageGroups["0-18歲"]++;
+        else if (ageVal <= 64) ageGroups["19-64歲"]++;
+        else if (ageVal <= 74) ageGroups["65-74歲"]++;
+        else ageGroups["75歲以上"]++;
+      }
+    }
+  });
+
+  // 低收入戶類別統計
+  let liTypeCounts: Record<string, number> = {
+    "0類": 0,
+    "1類": 0,
+    "2類": 0,
+    "3類": 0,
+    "4類": 0,
+  };
+  householdLiType.forEach((priority) => {
+    const key = `${priority}類`;
+    if (liTypeCounts[key] !== undefined) {
+      liTypeCounts[key]++;
+    }
+  });
+
+  // 各社宅比較資料轉成陣列
+  const projects = Object.keys(projectStatsMap).map((name) => {
+    const s = projectStatsMap[name];
+    const total = s.totalHH.size || 1;
+    return {
+      name,
+      total,
+      eldCount: s.eldHH.size,
+      disCount: s.disHH.size,
+      lowCount: s.lowHH.size,
+      eldRate: (s.eldHH.size / total) * 100,
+      disRate: (s.disHH.size / total) * 100,
+      lowRate: (s.lowHH.size / total) * 100,
+    };
+  });
+
+  return {
+    stats: {
+      pop: totalPop,
+      house: allHouseholds.size,
+      eld: elderlyStats,
+      dis: disabilityStats,
+      low: lowIncomeStats,
+      mid: midLowIncomeStats,
+    },
+    liTypeCounts,
+    disabilityTypes,
+    ageGroups,
+    projects,
+  };
+};
+
 // ==========================================
-// 子元件：社宅弱勢 (HousingDashboard)
+// 子元件：社宅弱勢 (用儀表板一版型，改為直接讀取 Google Sheet CSV)
 // ==========================================
 const HousingDashboard = () => {
-  const [view, setView] = useState("overview"); // overview | comparison
-  const [data, setData] = useState([]);
-  const [filteredData, setFilteredData] = useState([]);
-  const [selectedProjects, setSelectedProjects] = useState([]);
-  const [showFilter, setShowFilter] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "comparison">(
+    "overview"
+  );
+  const [rawData, setRawData] = useState<any[]>([]);
+  const [housingList, setHousingList] = useState<string[]>([]);
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterSearch, setFilterSearch] = useState("");
+
   const [loading, setLoading] = useState(true);
 
-  // 社宅弱勢 CSV（你提供的連結）
+  // Chart refs
+  const lowIncomeChartRef = useRef<HTMLCanvasElement | null>(null);
+  const disabilityChartRef = useRef<HTMLCanvasElement | null>(null);
+  const ageChartRef = useRef<HTMLCanvasElement | null>(null);
+  const compEldChartRef = useRef<HTMLCanvasElement | null>(null);
+  const compDisChartRef = useRef<HTMLCanvasElement | null>(null);
+  const compLowChartRef = useRef<HTMLCanvasElement | null>(null);
+  const serviceChartRef = useRef<HTMLCanvasElement | null>(null);
+
+  const chartsRef = useRef<Record<string, any>>({});
+
   const HOUSING_CSV_URL =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv";
 
-  // 讀取 CSV
+  // 讀取 Google Sheet CSV
   useEffect(() => {
-    const fetchHousingData = async () => {
+    const fetchHousing = async () => {
       try {
         setLoading(true);
         const res = await fetch(HOUSING_CSV_URL);
         const text = await res.text();
+        // 用你前面共用的 parseData，鎖定有「社宅名稱」的那一行當 header
+        const parsed = parseData(text, "社宅名稱");
+        setRawData(parsed);
 
-        // 指定「社宅名稱」這一列是標題列，避免抓錯 header
-        const rawData = parseData(text, "社宅名稱");
-
-        // 取出所有社宅名稱
-        const projects = [
+        const names = [
           ...new Set(
-            rawData
-              .map((r) => (r["社宅名稱"] || "").trim())
-              .filter((n) => n && n !== "社宅名稱")
+            parsed
+              .map((r: any) => (r["社宅名稱"] || "").trim())
+              .filter((n: string) => n)
           ),
         ].sort();
-
-        setData(rawData);
-        setFilteredData(rawData);
-        setSelectedProjects(projects);
+        setHousingList(names);
+        setActiveFilters(names); // 預設全選
       } catch (e) {
-        console.error("Housing CSV 載入失敗：", e);
+        console.error("Housing CSV 載入失敗:", e);
       } finally {
         setLoading(false);
       }
     };
+    fetchHousing();
 
-    fetchHousingData();
+    // 卸載時清掉所有 chart
+    return () => {
+      Object.values(chartsRef.current).forEach((c) => c && c.destroy());
+    };
   }, []);
 
-  // 依社宅名稱過濾
+  // 依篩選後的資料
+  const filteredData = useMemo(() => {
+    if (!activeFilters.length) return rawData;
+    return rawData.filter((r: any) =>
+      activeFilters.includes((r["社宅名稱"] || "").trim())
+    );
+  }, [rawData, activeFilters]);
+
+  // 執行「儀表板一」的統計邏輯
+  const processed = useMemo(() => {
+    return processHousingData(filteredData);
+  }, [filteredData]);
+
+  const { stats, liTypeCounts, disabilityTypes, ageGroups, projects } =
+    processed;
+
+  // 建立 / 更新各圖表 (Chart.js)
   useEffect(() => {
-    if (!data.length) return;
-    if (!selectedProjects.length) {
-      setFilteredData(data);
-      return;
+    if (!filteredData.length) return;
+
+    // 低收入戶類別圖
+    const liCtx = lowIncomeChartRef.current?.getContext("2d");
+    if (liCtx) {
+      if (chartsRef.current.lowIncome) chartsRef.current.lowIncome.destroy();
+      const labels = ["0類", "1類", "2類", "3類", "4類"];
+      const data = labels.map((k) => liTypeCounts[k] || 0);
+      const totalLowHH = stats.low.households.size || 0;
+
+      chartsRef.current.lowIncome = new Chart(liCtx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "戶數",
+              data,
+              backgroundColor: "#8b5cf6",
+              borderRadius: 6,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: {
+              anchor: "end",
+              align: "top",
+              color: "#4b5563",
+              formatter: (value: number) => {
+                if (!value) return "";
+                const pct =
+                  totalLowHH > 0
+                    ? ((value / totalLowHH) * 100).toFixed(1) + "%"
+                    : "0%";
+                return `${value}\n(${pct})`;
+              },
+            },
+          },
+          scales: {
+            y: { beginAtZero: true, grid: { color: "#e5e7eb" } },
+            x: { grid: { display: false } },
+          },
+          layout: { padding: { top: 30 } },
+        },
+      });
     }
 
-    const filtered = data.filter((r) =>
-      selectedProjects.includes((r["社宅名稱"] || "").trim())
+    // 身心障礙類別圖 (橫向 bar)
+    const disCtx = disabilityChartRef.current?.getContext("2d");
+    if (disCtx) {
+      if (chartsRef.current.disability) chartsRef.current.disability.destroy();
+      const sortedDis = Object.entries(disabilityTypes).sort(
+        (a, b) => (b[1] as number) - (a[1] as number)
+      );
+      const labels = sortedDis.map((d) => d[0]);
+      const data = sortedDis.map((d) => d[1]) as number[];
+      const totalDisPop = stats.dis.pop || 0;
+
+      chartsRef.current.disability = new Chart(disCtx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "人數",
+              data,
+              backgroundColor: "#f472b6",
+              borderRadius: 6,
+            },
+          ],
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: {
+              anchor: "end",
+              align: "end",
+              color: "#475569",
+              formatter: (value: number) => {
+                if (!value) return "";
+                const pct =
+                  totalDisPop > 0
+                    ? ((value / totalDisPop) * 100).toFixed(1) + "%"
+                    : "0%";
+                return `${value} (${pct})`;
+              },
+            },
+          },
+          scales: {
+            y: {
+              grid: { display: false },
+              ticks: { autoSkip: false, font: { size: 11 } },
+            },
+            x: { grid: { color: "#f1f5f9" } },
+          },
+        },
+      });
+    }
+
+    // 年齡結構 pie
+    const ageCtx = ageChartRef.current?.getContext("2d");
+    if (ageCtx) {
+      if (chartsRef.current.age) chartsRef.current.age.destroy();
+      const labels = Object.keys(ageGroups);
+      const data = Object.values(ageGroups) as number[];
+
+      chartsRef.current.age = new Chart(ageCtx, {
+        type: "pie",
+        data: {
+          labels,
+          datasets: [
+            {
+              data,
+              backgroundColor: ["#22d3ee", "#3b82f6", "#f97316", "#ef4444"],
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "right" },
+            datalabels: {
+              color: "#0f172a",
+              backgroundColor: "rgba(255,255,255,0.85)",
+              borderRadius: 4,
+              font: { weight: "bold", size: 11 },
+              padding: 4,
+              anchor: "end",
+              align: "start",
+              formatter: (value: number, ctx: any) => {
+                const sum = ctx.chart.data.datasets[0].data.reduce(
+                  (a: number, b: number) => a + b,
+                  0
+                );
+                if (!sum) return "0%";
+                const pct = ((value / sum) * 100).toFixed(1) + "%";
+                return `${value}人 (${pct})`;
+              },
+            },
+          },
+          layout: { padding: 30 },
+        },
+      });
+    }
+
+    // 各社宅比較圖
+    const sortedEld = [...projects].sort((a, b) => b.eldRate - a.eldRate);
+    const sortedDis = [...projects].sort((a, b) => b.disRate - a.disRate);
+    const sortedLow = [...projects].sort((a, b) => b.lowRate - a.lowRate);
+
+    const makeCompChart = (
+      key: string,
+      canvasRef: React.RefObject<HTMLCanvasElement>,
+      sorted: any[],
+      rateKey: "eldRate" | "disRate" | "lowRate",
+      countKey: "eldCount" | "disCount" | "lowCount",
+      color: string
+    ) => {
+      const ctx = canvasRef.current?.getContext("2d");
+      if (!ctx) return;
+      if (chartsRef.current[key]) chartsRef.current[key].destroy();
+
+      chartsRef.current[key] = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: sorted.map((d) => d.name),
+          datasets: [
+            {
+              label: "比例(%)",
+              data: sorted.map((d) => d[rateKey]),
+              backgroundColor: color,
+              borderRadius: 4,
+              barThickness: 18,
+            },
+          ],
+        },
+        options: {
+          indexAxis: "y",
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            datalabels: {
+              anchor: "end",
+              align: "end",
+              color: "#475569",
+              font: { weight: "bold" },
+              formatter: (value: number, context: any) => {
+                const idx = context.dataIndex;
+                const item = sorted[idx];
+                const pct = value.toFixed(1);
+                return `${pct}% (${item[countKey]}/${item.total}戶)`;
+              },
+            },
+          },
+          scales: {
+            x: { beginAtZero: true, max: 100, grid: { color: "#e5e7eb" } },
+            y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+          },
+          layout: { padding: { right: 80 } },
+        },
+      });
+    };
+
+    makeCompChart(
+      "compEld",
+      compEldChartRef,
+      sortedEld,
+      "eldRate",
+      "eldCount",
+      "#f97316"
     );
-    setFilteredData(filtered);
-  }, [data, selectedProjects]);
+    makeCompChart(
+      "compDis",
+      compDisChartRef,
+      sortedDis,
+      "disRate",
+      "disCount",
+      "#f43f5e"
+    );
+    makeCompChart(
+      "compLow",
+      compLowChartRef,
+      sortedLow,
+      "lowRate",
+      "lowCount",
+      "#6366f1"
+    );
+  }, [filteredData, liTypeCounts, disabilityTypes, ageGroups, stats, projects]);
 
-  // 總體統計（和你前一版一樣）
-  const stats = useMemo(() => {
-    let eld = 0,
-      dis = 0,
-      low = 0;
-    let ageGroups = {
-      "0-18歲": 0,
-      "19-64歲": 0,
-      "65-74歲": 0,
-      "75歲以上": 0,
-    };
-    let disMap = {};
-    let liMap = { "0類": 0, "1類": 0, "2類": 0, "3類": 0, "4類": 0 };
+  // 社工關懷服務 pie（固定值）
+  useEffect(() => {
+    const ctx = serviceChartRef.current?.getContext("2d");
+    if (!ctx) return;
+    if (chartsRef.current.service) return; // 只畫一次
+    const preService = 2648;
+    const postService = 264;
+    const total = preService + postService;
 
-    const households = new Set(filteredData.map((r) => r["戶號編碼"]));
-
-    filteredData.forEach((r) => {
-      const isEld = (r["獨老（列冊獨老）"] || "").includes("是");
-      const isDis = (r["是否有身障資格"] || "").trim() !== "";
-      const liType = r["低收或中低收資格"] || "";
-
-      if (isEld) eld++;
-      if (isDis) {
-        dis++;
-        const dType = r["障礙類別"];
-        if (dType) disMap[dType] = (disMap[dType] || 0) + 1;
-      }
-      if (liType.includes("類")) {
-        low++;
-        if (liMap[liType] !== undefined) liMap[liType]++;
-      }
-
-      const age = parseInt(r["年齡"]);
-      if (!isNaN(age)) {
-        if (age <= 18) ageGroups["0-18歲"]++;
-        else if (age <= 64) ageGroups["19-64歲"]++;
-        else if (age <= 74) ageGroups["65-74歲"]++;
-        else ageGroups["75歲以上"]++;
-      }
+    chartsRef.current.service = new Chart(ctx, {
+      type: "pie",
+      data: {
+        labels: ["入住前已服務", "入住後提供服務"],
+        datasets: [
+          {
+            data: [preService, postService],
+            backgroundColor: ["#ec4899", "#6366f1"],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "right" },
+          datalabels: {
+            color: "#ffffff",
+            font: { weight: "bold", size: 12 },
+            formatter: (value: number) => {
+              const pct = ((value / total) * 100).toFixed(1) + "%";
+              return `${value}人\n(${pct})`;
+            },
+          },
+        },
+      },
     });
+  }, []);
 
-    return {
-      pop: filteredData.length,
-      house: households.size,
-      eld,
-      dis,
-      low,
-      ageGroups,
-      disMap,
-      liMap,
-    };
-  }, [filteredData]);
+  // 篩選相關操作
+  const displayedHousingList = useMemo(() => {
+    const term = filterSearch.trim().toLowerCase();
+    if (!term) return housingList;
+    return housingList.filter((h) => h.toLowerCase().includes(term));
+  }, [housingList, filterSearch]);
 
-  // 各社宅比較：以「戶號」為單位算比例
-  const projectStats = useMemo(() => {
-    const projectMap = {};
+  const toggleFilter = () => setFilterOpen((v) => !v);
 
-    filteredData.forEach((r) => {
-      const projectName = (r["社宅名稱"] || "未標註").trim();
-      const hh = (r["戶號編碼"] || "").trim() || `${projectName}-未知戶`;
-
-      if (!projectMap[projectName]) {
-        projectMap[projectName] = {
-          total: new Set(),
-          eld: new Set(),
-          dis: new Set(),
-        };
-      }
-
-      const p = projectMap[projectName];
-      p.total.add(hh);
-
-      const isEld = (r["獨老（列冊獨老）"] || "").includes("是");
-      const isDis = (r["是否有身障資格"] || "").trim() !== "";
-
-      if (isEld) p.eld.add(hh);
-      if (isDis) p.dis.add(hh);
-    });
-
-    return Object.entries(projectMap).map(([name, p]) => {
-      const total = Math.max(p.total.size, 1);
-      return {
-        name,
-        total,
-        eldCount: p.eld.size,
-        disCount: p.dis.size,
-        eldRate: p.eld.size / total,
-        disRate: p.dis.size / total,
-      };
-    });
-  }, [filteredData]);
-
-  const toggleProject = (p) => {
-    setSelectedProjects((prev) =>
-      prev.includes(p) ? prev.filter((i) => i !== p) : [...prev, p]
+  const toggleProject = (name: string) => {
+    setActiveFilters((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
     );
   };
 
-  const liChartData = Object.keys(stats.liMap).map((k) => ({
-    name: k,
-    value: stats.liMap[k],
-  }));
-  const disChartData = Object.keys(stats.disMap)
-    .map((k) => ({ name: k, value: stats.disMap[k] }))
-    .sort((a, b) => b.value - a.value);
-  const ageChartData = Object.keys(stats.ageGroups).map((k) => ({
-    name: k,
-    value: stats.ageGroups[k],
-  }));
+  const selectAll = () => setActiveFilters(housingList);
+  const deselectAll = () => setActiveFilters([]);
 
-  if (loading)
+  if (loading) {
     return (
       <div className="h-96 flex items-center justify-center text-slate-400">
-        <Loader2 className="animate-spin mr-2" /> 載入社宅數據中...
+        <Loader2 className="animate-spin mr-2" />
+        載入社宅弱勢資料中…
       </div>
     );
-
-  // 依獨老 / 身障比例排序，取前 10 名
-  const topEldProjects = [...projectStats]
-    .filter((p) => p.total >= 5) // 避免樣本太少
-    .sort((a, b) => b.eldRate - a.eldRate)
-    .slice(0, 10);
-
-  const topDisProjects = [...projectStats]
-    .filter((p) => p.total >= 5)
-    .sort((a, b) => b.disRate - a.disRate)
-    .slice(0, 10);
+  }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {/* 上方控制列：標題 + tab + 篩選 */}
+    <div className="space-y-6">
+      {/* Header 卡片（來源 / 日期 / Tab / 篩選） */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          {/* 左側：來源 + Tabs */}
           <div>
-            <h2 className="text-xl font-bold text-slate-800 mb-1">
-              社宅弱勢數據分析
-            </h2>
-            {/* 這邊保留一次資料來源文字，篩選框裡就不要再重複 */}
-            <div className="text-sm text-slate-500 mb-4">
-              資料來源：Google Sheet CSV |{" "}
-              {new Date().toLocaleDateString("zh-TW")}
+            <div className="text-sm text-slate-500 flex items-center gap-3 mb-1">
+              <span>
+                來源：
+                <span className="font-mono text-indigo-600">
+                  Google Sheet CSV
+                </span>
+              </span>
+              <span className="text-slate-300">|</span>
+              <span>
+                日期：
+                <span>{new Date().toLocaleDateString("zh-TW")}</span>
+              </span>
             </div>
-            <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl w-fit">
+            {/* Tabs */}
+            <div className="flex space-x-6 mt-3">
               <button
-                onClick={() => setView("overview")}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                  view === "overview"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
+                onClick={() => setActiveTab("overview")}
+                className={`tab-btn pb-2 text-lg border-b-4 ${
+                  activeTab === "overview"
+                    ? "border-indigo-600 text-indigo-600 font-bold"
+                    : "border-transparent text-slate-500"
                 }`}
               >
+                <i className="fa-solid fa-chart-line mr-2" />
                 總體分析
               </button>
               <button
-                onClick={() => setView("comparison")}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                  view === "comparison"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
+                onClick={() => setActiveTab("comparison")}
+                className={`tab-btn pb-2 text-lg border-b-4 ${
+                  activeTab === "comparison"
+                    ? "border-indigo-600 text-indigo-600 font-bold"
+                    : "border-transparent text-slate-500"
                 }`}
               >
-                各社比較
+                <i className="fa-solid fa-arrow-trend-up mr-2" />
+                各社宅比較
               </button>
             </div>
           </div>
-
-          {/* 社宅篩選器（已移除重複的標題/資料來源文字） */}
-          <div className="w-full lg:w-auto">
+          {/* 右側：篩選社宅 dropdown */}
+          <div className="w-full lg:w-auto relative">
             <button
-              onClick={() => setShowFilter((p) => !p)}
-              className="flex items-center justify-between w-full lg:w-64 px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 hover:border-indigo-300 hover:text-indigo-600 bg-slate-50"
+              onClick={toggleFilter}
+              className="w-full lg:w-64 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg shadow-sm hover:bg-slate-50 flex justify-between items-center transition"
             >
-              <span className="flex items-center gap-2">
-                <Filter size={16} />
-                {selectedProjects.length > 0
-                  ? `已選 ${selectedProjects.length} 個社宅`
-                  : "篩選社宅"}
+              <span className="font-medium flex items-center gap-2">
+                <Filter size={16} className="text-indigo-500" />
+                {activeFilters.length === housingList.length
+                  ? "篩選社宅 (全選)"
+                  : `已選 ${activeFilters.length} 個社宅`}
               </span>
               <ChevronDown
-                size={16}
-                className={`transition-transform ${
-                  showFilter ? "rotate-180" : ""
+                size={14}
+                className={`ml-2 transition-transform ${
+                  filterOpen ? "rotate-180" : ""
                 }`}
               />
             </button>
 
-            {showFilter && (
-              <div className="mt-2 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-xl p-3 shadow-lg text-xs space-y-1">
-                {Array.from(
-                  new Set(
-                    data
-                      .map((r) => (r["社宅名稱"] || "").trim())
-                      .filter((n) => n)
-                  )
-                )
-                  .sort()
-                  .map((name) => (
+            {filterOpen && (
+              <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 max-h-[500px] flex flex-col">
+                {/* Search */}
+                <div className="p-2 border-b border-slate-100">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="搜尋社宅名稱..."
+                      className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={filterSearch}
+                      onChange={(e) => setFilterSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {/* 批次操作 */}
+                <div className="flex justify-between items-center px-3 py-2 border-b border-slate-100 mb-1 bg-slate-50">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">
+                    批次操作
+                  </span>
+                  <div className="flex gap-3 text-xs">
+                    <button
+                      onClick={selectAll}
+                      className="text-indigo-600 hover:underline font-medium"
+                    >
+                      全選
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      onClick={deselectAll}
+                      className="text-rose-500 hover:underline font-medium"
+                    >
+                      全不選
+                    </button>
+                  </div>
+                </div>
+                {/* List */}
+                <div className="space-y-1 overflow-y-auto max-h-64 text-xs">
+                  {displayedHousingList.map((name) => (
                     <label
                       key={name}
-                      className="flex items-center gap-2 py-0.5 cursor-pointer"
+                      className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-slate-50 rounded-lg"
                     >
                       <input
                         type="checkbox"
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        checked={selectedProjects.includes(name)}
+                        className="w-3 h-3 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        checked={activeFilters.includes(name)}
                         onChange={() => toggleProject(name)}
                       />
-                      <span className="text-slate-600">{name}</span>
+                      <span className="text-slate-700 truncate">{name}</span>
                     </label>
                   ))}
+                  {displayedHousingList.length === 0 && (
+                    <div className="px-2 py-2 text-xs text-slate-400">
+                      找不到符合的社宅名稱
+                    </div>
+                  )}
+                </div>
+                <div className="pt-2 border-t border-slate-100 mt-2">
+                  <button
+                    onClick={() => setFilterOpen(false)}
+                    className="w-full bg-indigo-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-indigo-700 shadow-md transition"
+                  >
+                    關閉篩選
+                  </button>
+                </div>
               </div>
             )}
           </div>
         </div>
+        {/* 總體統計 */}
+        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">
+            當前顯示數據範圍
+          </span>
+          <div className="text-xl font-black text-slate-800">
+            <span>{stats.pop.toLocaleString()}</span> 人{" "}
+            <span className="text-slate-300 mx-2">/</span>{" "}
+            <span>{stats.house.toLocaleString()}</span> 戶
+          </div>
+        </div>
       </div>
 
-      {/* 內容區：依 tab 切換 */}
-      {view === "overview" ? (
-        // ======= 總體分析頁（保留你原本的設計） =======
-        <div className="grid grid-cols-12 gap-6">
-          {/* 左邊統計卡片區 */}
-          <div className="col-span-12 lg:col-span-4 space-y-4">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                <Users size={16} className="text-indigo-500" />
-                弱勢戶概況
-              </h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-xs text-slate-400">總人口數</p>
-                  <p className="text-lg font-bold text-slate-800">
-                    {stats.pop.toLocaleString()} 人
-                  </p>
+      {/* 內容區：總體分析 / 各社比較 */}
+      {activeTab === "overview" ? (
+        <div className="space-y-6">
+          {/* Row 1: KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* 列冊獨老 */}
+            <div className="card p-5 border-l-4 border-orange-500 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-sm font-bold text-slate-500">列冊獨老</p>
+                <div className="icon-box bg-orange-100 text-orange-600">
+                  <i className="fa-solid fa-person-cane text-2xl" />
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-400">總戶數</p>
-                  <p className="text-lg font-bold text-slate-800">
-                    {stats.house.toLocaleString()} 戶
-                  </p>
+              </div>
+              <div className="flex flex-col items-end mt-1 w-full">
+                <div className="text-xl font-black text-slate-900 whitespace-nowrap self-start">
+                  {`${stats.eld.pop.toLocaleString()}人 / ${stats.eld.households.size.toLocaleString()}戶`}
                 </div>
-                <div>
-                  <p className="text-xs text-slate-400">列冊獨老</p>
-                  <p className="text-lg font-bold text-amber-600">
-                    {stats.eld.toLocaleString()} 戶
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-400">身心障礙</p>
-                  <p className="text-lg font-bold text-rose-500">
-                    {stats.dis.toLocaleString()} 戶
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-400">低收 / 中低收</p>
-                  <p className="text-lg font-bold text-sky-500">
-                    {stats.low.toLocaleString()} 戶
-                  </p>
+                <div className="text-sm font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded mt-2 no-wrap-text text-right w-full">
+                  佔總戶數{" "}
+                  {stats.house > 0
+                    ? ((stats.eld.households.size / stats.house) * 100).toFixed(
+                        1
+                      ) + "%"
+                    : "0%"}
                 </div>
               </div>
             </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                <BarChart2 size={16} className="text-teal-500" />
-                年齡結構
-              </h3>
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ageChartData} margin={{ top: 10, left: 0 }}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#f1f5f9"
-                    />
-                    <XAxis
-                      dataKey="name"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: 12,
-                        border: "none",
-                        boxShadow: "0 4px 12px rgba(15,23,42,0.12)",
-                      }}
-                    />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+            {/* 身心障礙 */}
+            <div className="card p-5 border-l-4 border-rose-500 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-sm font-bold text-slate-500">身心障礙</p>
+                <div className="icon-box bg-rose-100 text-rose-600">
+                  <i className="fa-solid fa-wheelchair text-2xl" />
+                </div>
+              </div>
+              <div className="flex flex-col items-end mt-1 w-full">
+                <div className="text-xl font-black text-slate-900 whitespace-nowrap self-start">
+                  {`${stats.dis.pop.toLocaleString()}人 / ${stats.dis.households.size.toLocaleString()}戶`}
+                </div>
+                <div className="text-sm font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded mt-2 no-wrap-text text-right w-full">
+                  佔總戶數{" "}
+                  {stats.house > 0
+                    ? ((stats.dis.households.size / stats.house) * 100).toFixed(
+                        1
+                      ) + "%"
+                    : "0%"}
+                </div>
+              </div>
+            </div>
+            {/* 低收入戶 */}
+            <div className="card p-5 border-l-4 border-indigo-500 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-sm font-bold text-slate-500">低收入戶</p>
+                <div className="icon-box bg-indigo-100 text-indigo-600">
+                  <i className="fa-solid fa-hand-holding-dollar text-2xl" />
+                </div>
+              </div>
+              <div className="flex flex-col items-end mt-1 w-full">
+                <div className="text-xl font-black text-slate-900 whitespace-nowrap self-start">
+                  {`${stats.low.pop.toLocaleString()}人 / ${stats.low.households.size.toLocaleString()}戶`}
+                </div>
+                <div className="text-sm font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded mt-2 no-wrap-text text-right w-full">
+                  佔總戶數{" "}
+                  {stats.house > 0
+                    ? (
+                        (stats.low.households.size / stats.house) *
+                        100
+                      ).toFixed(1) + "%"
+                    : "0%"}
+                </div>
+              </div>
+            </div>
+            {/* 中低收入戶 */}
+            <div className="card p-5 border-l-4 border-blue-400 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-sm font-bold text-slate-500">
+                  中低收入戶
+                </p>
+                <div className="icon-box bg-blue-100 text-blue-500">
+                  <i className="fa-solid fa-hands-holding-circle text-2xl" />
+                </div>
+              </div>
+              <div className="flex flex-col items-end mt-1 w-full">
+                <div className="text-xl font-black text-slate-900 whitespace-nowrap self-start">
+                  {`${stats.mid.pop.toLocaleString()}人 / ${stats.mid.households.size.toLocaleString()}戶`}
+                </div>
+                <div className="text-sm font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded mt-2 no-wrap-text text-right w-full">
+                  佔總戶數{" "}
+                  {stats.house > 0
+                    ? (
+                        (stats.mid.households.size / stats.house) *
+                        100
+                      ).toFixed(1) + "%"
+                    : "0%"}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* 右邊圖表區：低收類別 + 障礙類別 */}
-          <div className="col-span-12 lg:col-span-8 space-y-4">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">
-                低收 / 中低收 類別分布
-              </h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={liChartData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#f1f5f9"
-                    />
-                    <XAxis
-                      dataKey="name"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: 12,
-                        border: "none",
-                        boxShadow: "0 4px 12px rgba(15,23,42,0.12)",
-                      }}
-                    />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+          {/* Row 2: 低收類別 / 身障類別 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="card p-6 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-4 border-l-4 border-violet-500 pl-3">
+                <h3 className="text-lg font-bold text-slate-800">
+                  低收入戶類別結構 (0-4類)
+                </h3>
+                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                  單位：戶
+                </span>
+              </div>
+              <div className="relative h-80">
+                <canvas ref={lowIncomeChartRef} />
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">
-                身心障礙 類別分布（全體）
-              </h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={disChartData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#f1f5f9"
-                    />
-                    <XAxis
-                      dataKey="name"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: 12,
-                        border: "none",
-                        boxShadow: "0 4px 12px rgba(15,23,42,0.12)",
-                      }}
-                    />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+            <div className="card p-6 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-4 border-l-4 border-pink-500 pl-3">
+                <h3 className="text-lg font-bold text-slate-800">
+                  身心障礙類別統計
+                </h3>
+                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                  單位：人
+                </span>
+              </div>
+              <div className="relative overflow-hidden h-80">
+                <canvas ref={disabilityChartRef} />
+              </div>
+            </div>
+          </div>
+
+          {/* Row 3: 年齡分布 / 社工關懷服務 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-8">
+            <div className="card p-6 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-4 border-l-4 border-cyan-500 pl-3">
+                <h3 className="text-lg font-bold text-slate-800">
+                  年齡分佈結構
+                </h3>
+              </div>
+              <div className="pie-chart-container h-80">
+                <canvas ref={ageChartRef} />
+              </div>
+            </div>
+            <div className="card p-6 bg-white rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-2 border-l-4 border-indigo-500 pl-3">
+                <h3 className="text-lg font-bold text-slate-800">
+                  社工關懷服務情形
+                </h3>
+                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                  單位：人
+                </span>
+              </div>
+              <div className="mb-4 pl-3">
+                <span className="text-sm text-slate-500">已服務總人數：</span>
+                <span className="text-xl font-bold text-indigo-600">
+                  2,912
+                </span>
+                <span className="text-xs text-slate-400 block mt-1">
+                  (此數據為固定值，不隨篩選連動)
+                </span>
+              </div>
+              <div className="pie-chart-container h-80">
+                <canvas ref={serviceChartRef} />
               </div>
             </div>
           </div>
         </div>
       ) : (
-        // ======= 各社比較頁：列冊獨老 / 身障比例排行 =======
-        <div className="grid grid-cols-12 gap-6">
-          <div className="col-span-12 lg:col-span-6 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-              <AlertCircle size={16} className="text-amber-500" />
+        // comparison tab
+        <div className="space-y-6">
+          <div className="card p-6 bg-white rounded-2xl shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 border-l-4 border-orange-500 pl-3">
               各社宅「列冊獨老」比例排行
             </h3>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={topEldProjects}
-                  layout="vertical"
-                  margin={{ top: 10, right: 20, left: 80, bottom: 10 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    horizontal={false}
-                    stroke="#f1f5f9"
-                  />
-                  <XAxis
-                    type="number"
-                    tickFormatter={(v) => `${(v * 100).toFixed(1)}%`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
-                    width={80}
-                    tick={{ fontSize: 11, fill: "#64748b" }}
-                  />
-                  <Tooltip
-                    formatter={(v, k, p) => [
-                      `${(v * 100).toFixed(1)}%`,
-                      "列冊獨老占比",
-                    ]}
-                    labelFormatter={(label, payload) =>
-                      `${label}（${payload?.[0]?.payload.eldCount} 戶 / ${
-                        payload?.[0]?.payload.total
-                      } 戶）`
-                    }
-                    contentStyle={{
-                      borderRadius: 12,
-                      border: "none",
-                      boxShadow: "0 4px 12px rgba(15,23,42,0.12)",
-                    }}
-                  />
-                  <Bar dataKey="eldRate" radius={[0, 6, 6, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="relative w-full h-96">
+              <canvas ref={compEldChartRef} />
             </div>
           </div>
-
-          <div className="col-span-12 lg:col-span-6 bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-              <AlertCircle size={16} className="text-rose-500" />
+          <div className="card p-6 bg-white rounded-2xl shadow-sm border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 border-l-4 border-rose-500 pl-3">
               各社宅「身心障礙」比例排行
             </h3>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={topDisProjects}
-                  layout="vertical"
-                  margin={{ top: 10, right: 20, left: 80, bottom: 10 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    horizontal={false}
-                    stroke="#f1f5f9"
-                  />
-                  <XAxis
-                    type="number"
-                    tickFormatter={(v) => `${(v * 100).toFixed(1)}%`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
-                    width={80}
-                    tick={{ fontSize: 11, fill: "#64748b" }}
-                  />
-                  <Tooltip
-                    formatter={(v, k, p) => [
-                      `${(v * 100).toFixed(1)}%`,
-                      "身心障礙占比",
-                    ]}
-                    labelFormatter={(label, payload) =>
-                      `${label}（${payload?.[0]?.payload.disCount} 戶 / ${
-                        payload?.[0]?.payload.total
-                      } 戶）`
-                    }
-                    contentStyle={{
-                      borderRadius: 12,
-                      border: "none",
-                      boxShadow: "0 4px 12px rgba(15,23,42,0.12)",
-                    }}
-                  />
-                  <Bar dataKey="disRate" radius={[0, 6, 6, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="relative w-full h-96">
+              <canvas ref={compDisChartRef} />
+            </div>
+          </div>
+          <div className="card p-6 bg-white rounded-2xl shadow-sm border border-slate-200 mb-8">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 border-l-4 border-indigo-500 pl-3">
+              各社宅「低收入戶」比例排行
+            </h3>
+            <div className="relative w-full h-96">
+              <canvas ref={compLowChartRef} />
             </div>
           </div>
         </div>
       )}
+
+      <div className="text-center text-[10px] text-slate-400 border-t pt-4 pb-8">
+        報告生成工具：社宅數據視覺化儀表板 V18.0（React 版）
+      </div>
     </div>
   );
 };
-
-const KPICard = ({title, val, total, icon, color}) => (
-    <div className={`bg-white p-6 rounded-2xl border-l-4 border-${color}-500 shadow-sm hover:-translate-y-1 transition-transform duration-300`}>
-        <div className="flex justify-between items-center mb-4">
-            <p className="text-sm font-bold text-slate-500">{title}</p>
-            <div className={`w-10 h-10 rounded-xl bg-${color}-50 flex items-center justify-center text-${color}-500`}>{icon}</div>
-        </div>
-        <div className="text-3xl font-black text-slate-800">{val.toLocaleString()} <span className="text-sm font-medium text-slate-400">人</span></div>
-        <div className={`mt-3 inline-flex px-2.5 py-1 rounded-lg text-xs font-bold bg-${color}-50 text-${color}-600`}>
-            {/* [Fix] Add fallback for val/total to prevent NaN */}
-            佔總戶數 {total > 0 ? (val / total * 100).toFixed(1) : 0}%
-        </div>
-    </div>
-);
-
-const ChartCard = ({title, color, children}) => (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <div className={`flex items-center mb-6 pl-3 border-l-4 border-${color}-500`}>
-            <h3 className="text-lg font-bold text-slate-800">{title}</h3>
-        </div>
-        {children}
-    </div>
-);
-
 
 // ==========================================
 // 主應用程式 (Layout & Routing)
