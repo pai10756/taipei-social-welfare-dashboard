@@ -1069,7 +1069,7 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
              <img 
                src="綜合規劃股儀表板logo.jpg" 
                alt="綜合規劃股"
-               className="w-full h-full object-contain mix-blend-multiply"
+               className="w-full h-full object-contain scale-80 mix-blend-multiply"
              />
           </div>
           <div>
