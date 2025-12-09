@@ -3,7 +3,7 @@ import {
   Building2, FileText, CheckCircle2, CheckCircle, Layout, Home, Search, User,
   Loader2, ChevronDown, Baby, TrendingUp, AlertTriangle, Target, Info,
   Smartphone, Sun, Moon, X, Users, Accessibility, HeartHandshake,
-  BarChart3, PieChart as PieChartIcon, Menu, Calculator, Plus, Trash2, Smile, Award, HelpCircle
+  BarChart3, PieChart as PieChartIcon, Menu, Calculator, Plus, Trash2, RotateCcw, Filter, CheckSquare, Square
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, ComposedChart, ReferenceLine,
@@ -63,7 +63,7 @@ const parseData = (text, headerKeyword = null) => {
   const headers = parseLine(lines[0]);
   return lines.slice(1).map(line => {
     const values = parseLine(line);
-    const entry = { _raw: values }; 
+    const entry = { _raw: values }; // 保留原始陣列以供 Index 存取
     headers.forEach((header, index) => {
       const cleanHeader = header.replace(/^\uFEFF/, '').trim();
       if (cleanHeader) {
@@ -700,7 +700,6 @@ const SocialWelfareView = () => {
                        <XAxis dataKey="district" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => `${(val * 100).toFixed(0)}%`} />
                        
-                       {/* 修正後的 Tooltip: 完全還原截圖樣式 */}
                        <Tooltip 
                           cursor={{fill: '#f8fafc'}}
                           content={({ active, payload, label }) => {
@@ -709,8 +708,6 @@ const SocialWelfareView = () => {
                               return (
                                 <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm min-w-[220px]">
                                   <h4 className="font-bold text-slate-800 text-lg mb-3">{label}</h4>
-                                  
-                                  {/* Section 1: 現況 (藍色) */}
                                   <div className="mb-3">
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>現況 (vs 0-1歲人口)</span>
@@ -721,11 +718,7 @@ const SocialWelfareView = () => {
                                       <span className="text-xl font-bold">{(data.coverageNow * 100).toFixed(1)}%</span>
                                     </div>
                                   </div>
-                                  
-                                  {/* Divider */}
                                   <div className="border-t border-slate-100 my-3"></div>
-                                  
-                                  {/* Section 2: 布建後 (青綠色) */}
                                   <div>
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>布建後 (118年推估)</span>
@@ -744,7 +737,6 @@ const SocialWelfareView = () => {
                        />
 
                        <ReferenceLine y={0.10} stroke="#EF4444" strokeDasharray="3 3">
-                          {/* dy=-20 將文字上推 */}
                           <Label value="目標 10%" position="insideTopLeft" fill="#EF4444" fontSize={12} fontWeight="bold" dy={-20} />
                        </ReferenceLine>
                        <Bar dataKey="coverageNow" name="現況覆蓋率" fill="#60A5FA" barSize={20} radius={[4, 4, 0, 0]} />
@@ -804,89 +796,84 @@ const SocialWelfareView = () => {
 };
 
 // ==========================================
-// 2. 新增頁面：社宅弱勢主題 + 評點小遊戲 (SocialHousingVulnerabilityView)
+// 2-1. 社宅評點小遊戲 (SocialHousingScoringGame)
 // ==========================================
 
 const SocialHousingScoringGame = () => {
   // -----------------------
   // 狀態管理
   // -----------------------
-  
-  // 家庭狀況 (Boolean)
-  const [familyStatus, setFamilyStatus] = useState({
-    isLowIncome: false,       // 中低收入戶 (+7)
-    hasTwoKids: false,        // 2名以上未滿18歲子女 (+3)
-    isSingleParent: false,    // 單親 (+3)
-    isGrandparent: false,     // 隔代教養 (+3)
-    isSpousePrison: false,    // 配偶服刑 (+3)
-    isDisabledAlone: false,   // 獨居身障 (+10) -> 與獨居長者互斥
-    isElderlyAlone: false,    // 獨居長者 (+10) -> 與獨居身障互斥
-    isDVVictim: false,        // 家暴/性侵受害者 (+3)
-    isUnderageParent: false,  // 未成年懷孕/生育 (+3)
-  });
+  const initialFamilyStatus = {
+    isLowIncome: false, isLowIncomeChecked: false,
+    hasTwoKids: false, isSingleParent: false, isGrandparent: false,
+    isSpousePrison: false, isDisabledAlone: false, isElderlyAlone: false,
+    isDVVictim: false, isUnderageParent: false,
+  };
 
-  // 成員名單
-  const [members, setMembers] = useState([
-    // 預設一個成員 (可以留空讓使用者自己加，或預設本人)
-    { id: 1, name: '申請人', age: 30, isIndigenous: false, disabilityLevel: 'none', specialDisability: false, isIncapable: false, isHIV: false, isHomeless: false, isFosterEnd: false }
-  ]);
+  const initialMember = { 
+    id: 1, name: '申請人', age: '', 
+    isIndigenous: false, disabilityLevel: 'none', specialDisability: false, 
+    isIncapable: false, isHIV: false, isHomeless: false, isFosterEnd: false 
+  };
+
+  const [familyStatus, setFamilyStatus] = useState(initialFamilyStatus);
+  const [members, setMembers] = useState([initialMember]);
 
   // -----------------------
-  // 計算邏輯 (核心)
+  // 重置功能
+  // -----------------------
+  const resetGame = () => {
+    if (window.confirm('確定要重置所有資料嗎？')) {
+      setFamilyStatus(initialFamilyStatus);
+      setMembers([{ ...initialMember, id: Date.now() }]);
+    }
+  };
+
+  // -----------------------
+  // 計算邏輯
   // -----------------------
   const scoreResult = useMemo(() => {
     let familyScore = 0;
     let memberScore = 0;
-    const breakdown = []; // 紀錄得分原因
+    const breakdown = []; 
 
-    // --- 1. 家庭分數 ---
     if (familyStatus.isLowIncome) { familyScore += 7; breakdown.push({ label: '中低收入戶', points: 7 }); }
     if (familyStatus.hasTwoKids) { familyScore += 3; breakdown.push({ label: '育有2名未滿18子女', points: 3 }); }
     if (familyStatus.isSingleParent) { familyScore += 3; breakdown.push({ label: '單親家庭', points: 3 }); }
     if (familyStatus.isGrandparent) { familyScore += 3; breakdown.push({ label: '隔代教養', points: 3 }); }
     if (familyStatus.isSpousePrison) { familyScore += 3; breakdown.push({ label: '配偶服刑中', points: 3 }); }
     
-    // 獨居互斥邏輯：取最高分 (雖然都是10分，但規則上不能重複)
     if (familyStatus.isElderlyAlone) { 
-      familyScore += 10; 
-      breakdown.push({ label: '65歲以上獨居長者', points: 10 }); 
+      familyScore += 10; breakdown.push({ label: '65歲以上獨居長者', points: 10 }); 
     } else if (familyStatus.isDisabledAlone) { 
-      familyScore += 10; 
-      breakdown.push({ label: '獨居身障者', points: 10 }); 
+      familyScore += 10; breakdown.push({ label: '獨居身障者', points: 10 }); 
     }
 
     if (familyStatus.isDVVictim) { familyScore += 3; breakdown.push({ label: '家暴/性侵受害者', points: 3 }); }
     if (familyStatus.isUnderageParent) { familyScore += 3; breakdown.push({ label: '未成年懷孕/生育', points: 3 }); }
 
-    // --- 2. 成員分數 ---
     members.forEach((m, idx) => {
       let p = 0;
       let reasons = [];
-
-      // 年齡分數
       const age = parseInt(m.age) || 0;
-      if (age < 7) { p += 6; reasons.push('未滿7歲'); }
-      else if (age >= 7 && age < 18) { p += 4; reasons.push('7-18歲'); }
-      
-      // 長者年齡 (原住民減10歲門檻)
-      if (m.isIndigenous) {
-        if (age >= 55 && age < 60) { p += 7; reasons.push('原民長者(55-60)'); }
-        else if (age >= 60 && age < 65) { p += 8; reasons.push('原民長者(60-65)'); }
-        else if (age >= 65) { p += 10; reasons.push('原民長者(65+)'); }
-      } else {
-        if (age >= 65 && age < 70) { p += 7; reasons.push('長者(65-70)'); }
-        else if (age >= 70 && age < 75) { p += 8; reasons.push('長者(70-75)'); }
-        else if (age >= 75) { p += 10; reasons.push('長者(75+)'); }
+      if (m.age !== '') { // 有輸入年齡才算
+          if (age < 7) { p += 6; reasons.push('未滿7歲'); }
+          else if (age >= 7 && age < 18) { p += 4; reasons.push('7-18歲'); }
+          
+          if (m.isIndigenous) {
+            if (age >= 55 && age < 60) { p += 7; reasons.push('原民長者(55-60)'); }
+            else if (age >= 60 && age < 65) { p += 8; reasons.push('原民長者(60-65)'); }
+            else if (age >= 65) { p += 10; reasons.push('原民長者(65+)'); }
+          } else {
+            if (age >= 65 && age < 70) { p += 7; reasons.push('長者(65-70)'); }
+            else if (age >= 70 && age < 75) { p += 8; reasons.push('長者(70-75)'); }
+            else if (age >= 75) { p += 10; reasons.push('長者(75+)'); }
+          }
       }
 
-      // 身障等級
       if (m.disabilityLevel === 'mild_mod') { p += 5; reasons.push('輕/中度身障'); }
       if (m.disabilityLevel === 'severe') { p += 7; reasons.push('重/極重度身障'); }
-
-      // 特殊障礙類別 (自閉/智障/精障等)
       if (m.specialDisability) { p += 10; reasons.push('特定障礙類別'); }
-
-      // 其他
       if (m.isIncapable) { p += 5; reasons.push('失能'); }
       if (m.isHIV) { p += 3; reasons.push('HIV感染'); }
       if (m.isHomeless) { p += 3; reasons.push('街友'); }
@@ -907,7 +894,6 @@ const SocialHousingScoringGame = () => {
   const toggleStatus = (key) => {
     setFamilyStatus(prev => {
       const next = { ...prev, [key]: !prev[key] };
-      // 互斥邏輯處理
       if (key === 'isElderlyAlone' && next.isElderlyAlone) next.isDisabledAlone = false;
       if (key === 'isDisabledAlone' && next.isDisabledAlone) next.isElderlyAlone = false;
       return next;
@@ -931,10 +917,7 @@ const SocialHousingScoringGame = () => {
 
   return (
     <div className="grid grid-cols-12 gap-8 animate-in fade-in duration-500">
-      
-      {/* 左側：遊戲操作區 */}
       <div className="col-span-12 lg:col-span-8 space-y-8">
-        
         {/* Step 1: 家庭卡片 */}
         <section className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100">
           <div className="flex items-center gap-3 mb-6">
@@ -944,45 +927,15 @@ const SocialHousingScoringGame = () => {
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <StatusCard 
-              label="中低收入戶" point={7} active={familyStatus.isLowIncome} 
-              onClick={() => toggleStatus('isLowIncome')} icon={HeartHandshake}
-            />
-            <StatusCard 
-              label="育有2名以上子女" sub="(未滿18歲)" point={3} active={familyStatus.hasTwoKids} 
-              onClick={() => toggleStatus('hasTwoKids')} icon={Baby}
-            />
-            <StatusCard 
-              label="單親家庭" sub="(育有未滿18子女)" point={3} active={familyStatus.isSingleParent} 
-              onClick={() => toggleStatus('isSingleParent')} icon={User}
-            />
-            <StatusCard 
-              label="隔代教養" sub="(祖父母扶養)" point={3} active={familyStatus.isGrandparent} 
-              onClick={() => toggleStatus('isGrandparent')} icon={Users}
-            />
-            <StatusCard 
-              label="家暴/性侵受害" point={3} active={familyStatus.isDVVictim} 
-              onClick={() => toggleStatus('isDVVictim')} icon={AlertTriangle}
-            />
-            <StatusCard 
-              label="未成年懷孕/育兒" point={3} active={familyStatus.isUnderageParent} 
-              onClick={() => toggleStatus('isUnderageParent')} icon={Baby}
-            />
-            <StatusCard 
-              label="配偶服刑中" sub="(1年以上)" point={3} active={familyStatus.isSpousePrison} 
-              onClick={() => toggleStatus('isSpousePrison')} icon={FileText}
-            />
-            {/* 互斥組 */}
-            <StatusCard 
-              label="65歲以上獨居" point={10} active={familyStatus.isElderlyAlone} 
-              onClick={() => toggleStatus('isElderlyAlone')} icon={User} color="rose"
-              disabled={familyStatus.isDisabledAlone}
-            />
-            <StatusCard 
-              label="獨居身障者" point={10} active={familyStatus.isDisabledAlone} 
-              onClick={() => toggleStatus('isDisabledAlone')} icon={Accessibility} color="rose"
-              disabled={familyStatus.isElderlyAlone}
-            />
+            <StatusCard label="中低收入戶" point={7} active={familyStatus.isLowIncome} onClick={() => toggleStatus('isLowIncome')} icon={HeartHandshake}/>
+            <StatusCard label="育有2名以上子女" sub="(未滿18歲)" point={3} active={familyStatus.hasTwoKids} onClick={() => toggleStatus('hasTwoKids')} icon={Baby}/>
+            <StatusCard label="單親家庭" sub="(育有未滿18子女)" point={3} active={familyStatus.isSingleParent} onClick={() => toggleStatus('isSingleParent')} icon={User}/>
+            <StatusCard label="隔代教養" sub="(祖父母扶養)" point={3} active={familyStatus.isGrandparent} onClick={() => toggleStatus('isGrandparent')} icon={Users}/>
+            <StatusCard label="家暴/性侵受害" point={3} active={familyStatus.isDVVictim} onClick={() => toggleStatus('isDVVictim')} icon={AlertTriangle}/>
+            <StatusCard label="未成年懷孕/育兒" point={3} active={familyStatus.isUnderageParent} onClick={() => toggleStatus('isUnderageParent')} icon={Baby}/>
+            <StatusCard label="配偶服刑中" sub="(1年以上)" point={3} active={familyStatus.isSpousePrison} onClick={() => toggleStatus('isSpousePrison')} icon={FileText}/>
+            <StatusCard label="65歲以上獨居" point={10} active={familyStatus.isElderlyAlone} onClick={() => toggleStatus('isElderlyAlone')} icon={User} color="rose" disabled={familyStatus.isDisabledAlone}/>
+            <StatusCard label="獨居身障者" point={10} active={familyStatus.isDisabledAlone} onClick={() => toggleStatus('isDisabledAlone')} icon={Accessibility} color="rose" disabled={familyStatus.isElderlyAlone}/>
           </div>
         </section>
 
@@ -1004,18 +957,15 @@ const SocialHousingScoringGame = () => {
                 <button onClick={() => removeMember(m.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Trash2 size={20}/>
                 </button>
-                
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
                   <div className="md:col-span-3">
                     <label className="block text-xs font-bold text-slate-500 mb-2">姓名/稱謂</label>
                     <input type="text" value={m.name} onChange={(e) => updateMember(m.id, 'name', e.target.value)} className="w-full p-2 rounded-lg border border-slate-200 text-sm"/>
                   </div>
-                  
                   <div className="md:col-span-3">
                     <label className="block text-xs font-bold text-slate-500 mb-2">年齡 (歲)</label>
                     <input type="number" value={m.age} onChange={(e) => updateMember(m.id, 'age', e.target.value)} className="w-full p-2 rounded-lg border border-slate-200 text-sm" placeholder="請輸入"/>
                   </div>
-
                   <div className="md:col-span-3 flex items-center mb-2">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input type="checkbox" checked={m.isIndigenous} onChange={(e) => updateMember(m.id, 'isIndigenous', e.target.checked)} className="w-4 h-4 rounded text-blue-500"/>
@@ -1023,7 +973,6 @@ const SocialHousingScoringGame = () => {
                     </label>
                   </div>
                 </div>
-
                 <div className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-4">
                    <div className="col-span-2">
                       <label className="block text-xs font-bold text-slate-500 mb-2">身心障礙等級</label>
@@ -1033,7 +982,6 @@ const SocialHousingScoringGame = () => {
                         <option value="severe">重度、極重度 (+7)</option>
                       </select>
                    </div>
-                   {/* 其他勾選 */}
                    <div className="col-span-2 flex flex-wrap gap-3">
                       <TagCheck label="特定障礙類別(+10)" checked={m.specialDisability} onChange={(v) => updateMember(m.id, 'specialDisability', v)} tip="自閉症、肢體、智能或精神障礙"/>
                       <TagCheck label="失能(+5)" checked={m.isIncapable} onChange={(v) => updateMember(m.id, 'isIncapable', v)} />
@@ -1048,12 +996,21 @@ const SocialHousingScoringGame = () => {
         </section>
       </div>
 
-      {/* 右側：總分儀表板 (Sticky) */}
       <div className="col-span-12 lg:col-span-4">
         <div className="sticky top-24 bg-slate-900 text-white rounded-3xl p-8 shadow-xl">
-           <div className="flex items-center gap-3 mb-6 opacity-80">
-             <Calculator size={24}/>
-             <span className="text-sm font-bold tracking-widest">SCORE BOARD</span>
+           <div className="flex items-center justify-between mb-6 opacity-80">
+             <div className="flex items-center gap-3">
+               <Calculator size={24}/>
+               <span className="text-sm font-bold tracking-widest">SCORE BOARD</span>
+             </div>
+             {/* 重置按鈕 */}
+             <button 
+                onClick={resetGame}
+                className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors text-white"
+                title="重置"
+             >
+                <RotateCcw size={16} />
+             </button>
            </div>
            
            <div className="text-center mb-8">
@@ -1092,12 +1049,10 @@ const SocialHousingScoringGame = () => {
            </div>
         </div>
       </div>
-
     </div>
   );
 };
 
-// 小遊戲用的子元件
 const StatusCard = ({ label, sub, point, active, onClick, icon: Icon, disabled, color="blue" }) => {
   const baseClass = `cursor-pointer relative p-4 rounded-xl border-2 transition-all duration-200 select-none flex flex-col items-center justify-center text-center gap-2 h-32`;
   const activeClass = `bg-${color}-50 border-${color}-500 shadow-md transform scale-[1.02]`;
@@ -1105,10 +1060,7 @@ const StatusCard = ({ label, sub, point, active, onClick, icon: Icon, disabled, 
   const disabledClass = `bg-slate-100 border-slate-100 opacity-50 cursor-not-allowed grayscale`;
 
   return (
-    <div 
-      onClick={!disabled ? onClick : undefined} 
-      className={`${baseClass} ${disabled ? disabledClass : (active ? activeClass : inactiveClass)}`}
-    >
+    <div onClick={!disabled ? onClick : undefined} className={`${baseClass} ${disabled ? disabledClass : (active ? activeClass : inactiveClass)}`}>
       <div className={`p-2 rounded-full ${active ? `bg-${color}-100 text-${color}-600` : 'bg-slate-100 text-slate-400'}`}>
         <Icon size={20} />
       </div>
@@ -1116,9 +1068,7 @@ const StatusCard = ({ label, sub, point, active, onClick, icon: Icon, disabled, 
         <p className={`font-bold text-sm ${active ? `text-${color}-700` : 'text-slate-600'}`}>{label}</p>
         {sub && <p className="text-[10px] opacity-70">{sub}</p>}
       </div>
-      <div className={`absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded ${active ? `bg-${color}-200 text-${color}-800` : 'bg-slate-200 text-slate-500'}`}>
-        +{point}
-      </div>
+      <div className={`absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded ${active ? `bg-${color}-200 text-${color}-800` : 'bg-slate-200 text-slate-500'}`}>+{point}</div>
     </div>
   );
 };
@@ -1135,12 +1085,9 @@ const TagCheck = ({ label, checked, onChange, tip }) => (
 // 2-1. 社宅弱勢 View (整合儀表板與遊戲)
 // ==========================================
 const SocialHousingVulnerabilityView = () => {
-  // 分頁切換狀態: 'dashboard' | 'game'
   const [subTab, setSubTab] = useState('dashboard');
-
   return (
     <div className="space-y-6">
-      {/* 頂部切換按鈕 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
            <div className="w-1.5 h-8 bg-indigo-500"></div>
@@ -1148,44 +1095,53 @@ const SocialHousingVulnerabilityView = () => {
         </div>
         
         <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-sm flex">
-          <button 
-            onClick={() => setSubTab('dashboard')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${subTab === 'dashboard' ? 'bg-indigo-50 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
+          <button onClick={() => setSubTab('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${subTab === 'dashboard' ? 'bg-indigo-50 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             <BarChart3 size={16}/> 數據儀表板
           </button>
-          <button 
-            onClick={() => setSubTab('game')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${subTab === 'game' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
+          <button onClick={() => setSubTab('game')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${subTab === 'game' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             <Calculator size={16}/> 評點試算小遊戲
           </button>
         </div>
       </div>
-
-      {/* 內容區 */}
       {subTab === 'dashboard' ? <SocialHousingDashboard /> : <SocialHousingScoringGame />}
     </div>
   );
 };
 
-// 將原本的 Dashboard 邏輯抽離成獨立元件
+// ==========================================
+// 社宅弱勢儀表板 (大幅升級)
+// ==========================================
 const SocialHousingDashboard = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // 篩選器狀態
+  const [selectedSites, setSelectedSites] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterRef = useRef(null);
 
-  // CSV URL
   const VULNERABLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv';
 
-  // [固定欄位 Index] (避免標題名稱變動導致無資料)
-  // Index從0開始: M=12, H=7, Z=25, L=11, J=9
   const FIXED_INDICES = {
-    houseNo: 25,    // Z
-    elderly: 12,    // M
-    disability: 7,  // H
-    welfare: 11,    // L
-    disType: 9      // J
+    siteName: 0,    // A欄: 社會住宅 (假設在第一欄)
+    houseNo: 25,    // Z欄
+    elderly: 12,    // M欄
+    disability: 7,  // H欄
+    welfare: 11,    // L欄
+    disType: 9      // J欄
   };
+
+  // 關閉下拉選單
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (filterRef.current && !filterRef.current.contains(event.target)) {
+        setIsFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1203,19 +1159,66 @@ const SocialHousingDashboard = () => {
     fetchData();
   }, []);
 
+  // 取得所有唯一的社宅名稱
+  const allSites = useMemo(() => {
+    if (data.length === 0) return [];
+    const sites = new Set();
+    const kSite = Object.keys(data[0]).find(k => k.includes('社會住宅') || k.includes('社宅')) || '社會住宅';
+    
+    data.forEach(row => {
+      // 嘗試抓社宅名稱 (優先用標題，無標題用Index 0)
+      let name = row[kSite];
+      if (!name && row._raw && row._raw[0]) name = row._raw[0];
+      if (name) sites.add(String(name).trim());
+    });
+    return Array.from(sites).sort();
+  }, [data]);
+
+  // 初始化全選
+  useEffect(() => {
+    if (allSites.length > 0 && selectedSites.length === 0) {
+      setSelectedSites(allSites);
+    }
+  }, [allSites]);
+
+  const toggleSite = (site) => {
+    setSelectedSites(prev => prev.includes(site) ? prev.filter(s => s !== site) : [...prev, site]);
+  };
+
+  const handleSelectAll = () => setSelectedSites(allSites);
+  const handleClearAll = () => setSelectedSites([]);
+
+  // 過濾後的數據
+  const filteredData = useMemo(() => {
+    if (data.length === 0) return [];
+    const kSite = Object.keys(data[0]).find(k => k.includes('社會住宅') || k.includes('社宅')) || '社會住宅';
+    
+    return data.filter(row => {
+      let name = row[kSite];
+      if (!name && row._raw && row._raw[0]) name = row._raw[0];
+      return selectedSites.includes(String(name).trim());
+    });
+  }, [data, selectedSites]);
+
+  // 核心統計計算
   const stats = useMemo(() => {
-    if (data.length === 0) return null;
+    if (filteredData.length === 0) return null;
 
-    // 嘗試動態找標題
-    const findKey = (row, keywords) => Object.keys(row).find(k => keywords.some(kw => k.includes(kw)));
-    const sample = data[0];
-    const kHouse = findKey(sample, ['戶號', '編碼', 'Z']); 
-    const kElderly = findKey(sample, ['獨老', 'M']);
-    const kDisability = findKey(sample, ['身心障礙', 'H']);
-    const kWelfare = findKey(sample, ['福利', 'L']);
-    const kDisType = findKey(sample, ['障礙類別', 'J']);
+    // 尋找 Key
+    const sample = filteredData[0];
+    const findKey = (keywords) => Object.keys(sample).find(k => keywords.some(kw => k.includes(kw)));
+    
+    const kSite = findKey(['社會住宅', '社宅']) || 'site';
+    const kHouse = findKey(['戶號', '編碼', 'Z']); 
+    const kElderly = findKey(['獨老', 'M']);
+    const kDisability = findKey(['身心障礙', 'H']);
+    const kWelfare = findKey(['福利', 'L']);
+    const kDisType = findKey(['障礙類別', 'J']);
 
-    // 初始化計數器
+    // 計數器
+    let countTotalPeople = 0;
+    const setTotalHouse = new Set();
+
     let countElderlyPeople = 0;
     const setElderlyHouse = new Set();
     let countDisabilityPeople = 0;
@@ -1226,51 +1229,57 @@ const SocialHousingDashboard = () => {
     const setMidLowHouse = new Set();
 
     const lowIncomeTypeMap = {}; 
-    const disTypeMap = {}; 
+    const disTypeMap = {};
+    
+    // Top 10 分析 Map
+    const siteElderlyMap = {};
+    const siteDisabilityMap = {};
 
-    data.forEach(row => {
-      // 優先使用標題Key，若無則使用固定Index (raw)
+    filteredData.forEach(row => {
       const getValue = (key, idx) => {
         if (key && row[key]) return String(row[key]).trim();
         if (row._raw && row._raw[idx]) return String(row._raw[idx]).trim();
         return '';
       };
 
+      const siteName = getValue(kSite, FIXED_INDICES.siteName);
       const houseNo = getValue(kHouse, FIXED_INDICES.houseNo);
       const valElderly = getValue(kElderly, FIXED_INDICES.elderly);
       const valDisability = getValue(kDisability, FIXED_INDICES.disability);
       const valWelfare = getValue(kWelfare, FIXED_INDICES.welfare);
       const valDisType = getValue(kDisType, FIXED_INDICES.disType);
 
+      // 全體統計
+      countTotalPeople++;
+      if (houseNo) setTotalHouse.add(houseNo);
+
       // (1) 獨老
       if (valElderly === '是' || valElderly === 'V') {
         countElderlyPeople++;
         if (houseNo) setElderlyHouse.add(houseNo);
+        // Top 10 統計
+        if (siteName) siteElderlyMap[siteName] = (siteElderlyMap[siteName] || 0) + 1;
       }
 
       // (2) 身障
       if (valDisability === 'V' || valDisability === '是') {
         countDisabilityPeople++;
         if (houseNo) setDisabilityHouse.add(houseNo);
-        // 身障類別 (人數)
-        if (valDisType) {
-          disTypeMap[valDisType] = (disTypeMap[valDisType] || 0) + 1;
-        }
+        if (valDisType) disTypeMap[valDisType] = (disTypeMap[valDisType] || 0) + 1;
+        // Top 10 統計
+        if (siteName) siteDisabilityMap[siteName] = (siteDisabilityMap[siteName] || 0) + 1;
       }
 
-      // (3)(4) 福利身分 & (5) 類別結構
+      // (3)(4) 福利身分
       if (valWelfare.includes('中低收')) {
         countMidLowPeople++;
         if (houseNo) setMidLowHouse.add(houseNo);
       } else if (
           ['0類', '1類', '2類', '3類', '4類'].some(t => valWelfare.includes(t)) || 
-          valWelfare.match(/[0-4]類/) ||
-          valWelfare.match(/^[0-4]$/)
+          valWelfare.match(/[0-4]類/) || valWelfare.match(/^[0-4]$/)
       ) {
         countLowIncomePeople++;
         if (houseNo) setLowIncomeHouse.add(houseNo);
-
-        // 判斷類別 (0-4類)
         const match = valWelfare.match(/[0-4]類/) || valWelfare.match(/[0-4]/);
         if (match) {
            let type = match[0];
@@ -1281,71 +1290,116 @@ const SocialHousingDashboard = () => {
       }
     });
 
-    const lowIncomeChartData = Object.entries(lowIncomeTypeMap).map(([name, set]) => ({
-      name, value: set.size
-    })).sort((a, b) => a.name.localeCompare(b.name));
-    
+    // Chart Data Generation
+    const lowIncomeChartData = Object.entries(lowIncomeTypeMap).map(([name, set]) => ({ name, value: set.size })).sort((a, b) => a.name.localeCompare(b.name));
     const totalLowIncomeHouseForChart = lowIncomeChartData.reduce((acc, c) => acc + c.value, 0);
     lowIncomeChartData.forEach(d => {
       d.percent = totalLowIncomeHouseForChart > 0 ? ((d.value / totalLowIncomeHouseForChart) * 100).toFixed(1) + '%' : '0%';
       d.label = `${d.value}戶 (${d.percent})`;
     });
 
-    const disChartData = Object.entries(disTypeMap).map(([name, value]) => ({
-      name, value
-    })).sort((a, b) => b.value - a.value); 
-    
+    const disChartData = Object.entries(disTypeMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value); 
     const totalDisPeople = disChartData.reduce((acc, c) => acc + c.value, 0);
     disChartData.forEach(d => {
       d.percent = totalDisPeople > 0 ? ((d.value / totalDisPeople) * 100).toFixed(1) + '%' : '0%';
       d.label = `${d.value}人 (${d.percent})`;
     });
 
+    // Top 10 Charts
+    const getTop10 = (map) => Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
+    const top10Elderly = getTop10(siteElderlyMap);
+    const top10Disability = getTop10(siteDisabilityMap);
+
     return {
+      totalPeople: countTotalPeople,
+      totalHouse: setTotalHouse.size,
       elderly: { people: countElderlyPeople, house: setElderlyHouse.size },
       disability: { people: countDisabilityPeople, house: setDisabilityHouse.size },
       lowIncome: { people: countLowIncomePeople, house: setLowIncomeHouse.size },
       midLow: { people: countMidLowPeople, house: setMidLowHouse.size },
-      charts: { lowIncome: lowIncomeChartData, disability: disChartData }
+      charts: { lowIncome: lowIncomeChartData, disability: disChartData, top10Elderly, top10Disability }
     };
-  }, [data]);
-
-  const StatCard = ({ title, subTitle, people, house, colorClass, icon: Icon }) => (
-    <div className={`bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 relative overflow-hidden`}>
-       <div className={`absolute right-0 top-0 w-24 h-24 ${colorClass} opacity-5 rounded-bl-full`}></div>
-       <div className={`w-14 h-14 rounded-full ${colorClass.replace('bg-', 'bg-').replace('500', '100')} flex items-center justify-center ${colorClass.replace('bg-', 'text-')}`}>
-         <Icon size={28} />
-       </div>
-       <div className="flex-1">
-         <p className="text-sm text-slate-500 font-medium mb-1">{title}</p>
-         <div className="flex items-end gap-2">
-            <span className="text-3xl font-bold text-slate-800">{people}</span>
-            <span className="text-sm text-slate-400 mb-1.5">人</span>
-         </div>
-         <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-center">
-            <span className="text-xs text-slate-400">對應戶數</span>
-            <span className="text-sm font-semibold text-slate-600">{house} 戶</span>
-         </div>
-       </div>
-    </div>
-  );
+  }, [filteredData]);
 
   if (loading) return <div className="flex h-96 items-center justify-center text-slate-400"><Loader2 className="animate-spin mr-2"/> 載入數據中...</div>;
   if (!stats) return <div className="flex h-96 items-center justify-center text-slate-400">無法讀取資料，請確認 Google Sheet 是否已發布為 CSV</div>;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* 1. 四大卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="列冊獨居長者" people={stats.elderly.people} house={stats.elderly.house} colorClass="bg-amber-500" icon={User} />
-        <StatCard title="身心障礙者" people={stats.disability.people} house={stats.disability.house} colorClass="bg-rose-500" icon={Accessibility} />
-        <StatCard title="低收入戶" people={stats.lowIncome.people} house={stats.lowIncome.house} colorClass="bg-blue-500" icon={HeartHandshake} />
-        <StatCard title="中低收入戶" people={stats.midLow.people} house={stats.midLow.house} colorClass="bg-teal-500" icon={Target} />
+      
+      {/* 頂部總覽條 + 篩選器 */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
+         <div className="flex gap-6">
+            <div className="flex items-center gap-2">
+               <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><User size={20}/></div>
+               <div>
+                 <p className="text-xs text-slate-400">現住戶總人數</p>
+                 <p className="text-xl font-bold text-slate-700">{stats.totalPeople}</p>
+               </div>
+            </div>
+            <div className="w-px h-10 bg-slate-100"></div>
+            <div className="flex items-center gap-2">
+               <div className="p-2 bg-teal-50 text-teal-600 rounded-lg"><Home size={20}/></div>
+               <div>
+                 <p className="text-xs text-slate-400">現住戶總戶數</p>
+                 <p className="text-xl font-bold text-slate-700">{stats.totalHouse}</p>
+               </div>
+            </div>
+         </div>
+
+         {/* 篩選按鈕 */}
+         <div className="relative" ref={filterRef}>
+            <button 
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <Filter size={16}/>
+              <span>篩選社宅 ({selectedSites.length === allSites.length ? '全部' : selectedSites.length})</span>
+              <ChevronDown size={16}/>
+            </button>
+
+            {isFilterOpen && (
+              <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-100 rounded-xl shadow-xl z-50 p-4">
+                 <div className="mb-3 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                    <input 
+                      type="text" 
+                      placeholder="搜尋社宅..." 
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                 </div>
+                 <div className="flex gap-2 mb-3">
+                    <button onClick={handleSelectAll} className="flex-1 text-xs bg-blue-50 text-blue-600 py-1.5 rounded hover:bg-blue-100">全選</button>
+                    <button onClick={handleClearAll} className="flex-1 text-xs bg-slate-50 text-slate-600 py-1.5 rounded hover:bg-slate-100">取消全選</button>
+                 </div>
+                 <div className="max-h-60 overflow-y-auto custom-scrollbar space-y-1">
+                    {allSites.filter(s => s.includes(searchTerm)).map(site => (
+                      <label key={site} className="flex items-center gap-2 p-2 hover:bg-slate-50 rounded cursor-pointer text-sm">
+                        <div className={`w-4 h-4 border rounded flex items-center justify-center ${selectedSites.includes(site) ? 'bg-blue-500 border-blue-500 text-white' : 'border-slate-300'}`}>
+                           {selectedSites.includes(site) && <CheckCircle2 size={12}/>}
+                        </div>
+                        <input type="checkbox" className="hidden" checked={selectedSites.includes(site)} onChange={() => toggleSite(site)} />
+                        <span className="text-slate-700 truncate">{site}</span>
+                      </label>
+                    ))}
+                 </div>
+              </div>
+            )}
+         </div>
       </div>
 
-      {/* 2. 圖表區 */}
+      {/* 4張主要圖卡 (含佔比) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard title="列冊獨居長者" people={stats.elderly.people} house={stats.elderly.house} totalPeople={stats.totalPeople} colorClass="bg-amber-500" icon={User} />
+        <StatCard title="身心障礙者" people={stats.disability.people} house={stats.disability.house} totalPeople={stats.totalPeople} colorClass="bg-rose-500" icon={Accessibility} />
+        <StatCard title="低收入戶" people={stats.lowIncome.people} house={stats.lowIncome.house} totalPeople={stats.totalPeople} colorClass="bg-blue-500" icon={HeartHandshake} />
+        <StatCard title="中低收入戶" people={stats.midLow.people} house={stats.midLow.house} totalPeople={stats.totalPeople} colorClass="bg-teal-500" icon={Target} />
+      </div>
+
+      {/* 圖表區 Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
         {/* 低收入戶類別結構 */}
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-3 mb-6">
@@ -1358,10 +1412,7 @@ const SocialHousingDashboard = () => {
                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
                  <XAxis type="number" hide />
                  <YAxis dataKey="name" type="category" width={50} tick={{fontSize: 12, fill: '#64748b'}} />
-                 <Tooltip 
-                    cursor={{fill: '#f8fafc'}}
-                    formatter={(value) => [value, '戶數']} 
-                 />
+                 <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '戶數']} />
                  <Bar dataKey="value" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={30}>
                     <LabelList dataKey="label" position="right" fill="#64748b" fontSize={12} />
                  </Bar>
@@ -1383,10 +1434,7 @@ const SocialHousingDashboard = () => {
                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
                  <XAxis type="number" hide />
                  <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 11, fill: '#64748b'}} interval={0} />
-                 <Tooltip 
-                    cursor={{fill: '#f8fafc'}}
-                    formatter={(value) => [value, '人數']}
-                 />
+                 <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
                  <Bar dataKey="value" fill="#F43F5E" radius={[0, 4, 4, 0]} barSize={20}>
                     <LabelList dataKey="label" position="right" fill="#64748b" fontSize={11} />
                  </Bar>
@@ -1395,12 +1443,56 @@ const SocialHousingDashboard = () => {
           </div>
           <p className="text-center text-xs text-slate-400 mt-2">* 統計單位：人數</p>
         </div>
-
       </div>
+
+      {/* 圖表區 Row 2: Top 10 分析 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+         {/* 獨居長者 Top 10 */}
+         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3 mb-6">
+               <div className="p-2 bg-amber-50 text-amber-500 rounded-lg"><TrendingUp size={20}/></div>
+               <h3 className="text-lg font-bold text-slate-700">列冊獨居長者 Top 10 社宅</h3>
+            </div>
+            <div className="h-[350px]">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={stats.charts.top10Elderly} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
+                   <XAxis type="number" hide />
+                   <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#64748b'}} interval={0}/>
+                   <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
+                   <Bar dataKey="value" fill="#F59E0B" radius={[0, 4, 4, 0]} barSize={20}>
+                      <LabelList dataKey="value" position="right" fill="#64748b" fontSize={12} formatter={(val)=>`${val}人`}/>
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
+            </div>
+         </div>
+
+         {/* 身障者 Top 10 */}
+         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3 mb-6">
+               <div className="p-2 bg-rose-50 text-rose-500 rounded-lg"><TrendingUp size={20}/></div>
+               <h3 className="text-lg font-bold text-slate-700">身心障礙者 Top 10 社宅</h3>
+            </div>
+            <div className="h-[350px]">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={stats.charts.top10Disability} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
+                   <XAxis type="number" hide />
+                   <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#64748b'}} interval={0}/>
+                   <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
+                   <Bar dataKey="value" fill="#EC4899" radius={[0, 4, 4, 0]} barSize={20}>
+                      <LabelList dataKey="value" position="right" fill="#64748b" fontSize={12} formatter={(val)=>`${val}人`}/>
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
+            </div>
+         </div>
+      </div>
+
     </div>
   );
 };
-
 
 // ==========================================
 // 3. 主框架 (Main Layout)
@@ -1457,6 +1549,34 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
         </div>
       </aside>
     </>
+  );
+};
+
+// 小遊戲用的子元件
+const StatCard = ({ title, subTitle, people, house, totalPeople, colorClass, icon: Icon }) => {
+  const percent = totalPeople > 0 ? ((people / totalPeople) * 100).toFixed(1) : 0;
+  
+  return (
+    <div className={`bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 relative overflow-hidden`}>
+       <div className={`absolute right-0 top-0 w-24 h-24 ${colorClass} opacity-5 rounded-bl-full`}></div>
+       <div className={`w-14 h-14 rounded-full ${colorClass.replace('bg-', 'bg-').replace('500', '100')} flex items-center justify-center ${colorClass.replace('bg-', 'text-')}`}>
+         <Icon size={28} />
+       </div>
+       <div className="flex-1">
+         <p className="text-sm text-slate-500 font-medium mb-1">{title}</p>
+         <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold text-slate-800">{people}</span>
+            <span className="text-xs font-medium text-slate-400">人</span>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${colorClass.replace('bg-', 'bg-').replace('500', '100')} ${colorClass.replace('bg-', 'text-').replace('500', '600')}`}>
+               {percent}%
+            </span>
+         </div>
+         <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-center">
+            <span className="text-xs text-slate-400">對應戶數</span>
+            <span className="text-sm font-semibold text-slate-600">{house} 戶</span>
+         </div>
+       </div>
+    </div>
   );
 };
 
