@@ -709,6 +709,8 @@ const SocialWelfareView = () => {
                               return (
                                 <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm min-w-[220px]">
                                   <h4 className="font-bold text-slate-800 text-lg mb-3">{label}</h4>
+                                  
+                                  {/* Section 1: 現況 (藍色) */}
                                   <div className="mb-3">
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>現況 (vs 0-1歲人口)</span>
@@ -719,7 +721,11 @@ const SocialWelfareView = () => {
                                       <span className="text-xl font-bold">{(data.coverageNow * 100).toFixed(1)}%</span>
                                     </div>
                                   </div>
+                                  
+                                  {/* Divider */}
                                   <div className="border-t border-slate-100 my-3"></div>
+                                  
+                                  {/* Section 2: 布建後 (青綠色) */}
                                   <div>
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>布建後 (118年推估)</span>
@@ -1219,29 +1225,19 @@ const SocialHousingDashboard = () => {
   const handleClearAll = () => setSelectedSites([]);
 
   // 過濾數據: 
-  // 1. 若有搜尋關鍵字 -> 優先顯示搜尋結果
-  // 2. 若無搜尋關鍵字 -> 顯示已勾選社宅
-  // 3. 若以上皆空 -> 顯示全部 (預設狀態)
+  // 修改：搜尋僅過濾選項，數據呈現只看勾選狀態。若無勾選則顯示全部。
   const filteredData = useMemo(() => {
     if (data.length === 0) return [];
     
-    // 優先：搜尋連動
-    if (searchTerm.trim() !== '') {
-        return data.filter(row => {
-            let name = row._raw && row._raw[FIXED_INDICES.siteName];
-            return name && String(name).trim().includes(searchTerm.trim());
-        });
-    }
-
-    // 其次：若無勾選任何社宅，則回傳全部資料 (預設狀態)
+    // 若無勾選任何社宅，則回傳全部資料 (預設狀態)
     if (selectedSites.length === 0) return data; 
 
-    // 最後：回傳勾選的社宅
+    // 回傳勾選的社宅
     return data.filter(row => {
       let name = row._raw && row._raw[FIXED_INDICES.siteName];
       return name && selectedSites.includes(String(name).trim());
     });
-  }, [data, selectedSites, searchTerm]);
+  }, [data, selectedSites]); // 移除 searchTerm 依賴
 
   const stats = useMemo(() => {
     const emptyStats = {
