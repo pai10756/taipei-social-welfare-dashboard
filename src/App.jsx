@@ -709,8 +709,6 @@ const SocialWelfareView = () => {
                               return (
                                 <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm min-w-[220px]">
                                   <h4 className="font-bold text-slate-800 text-lg mb-3">{label}</h4>
-                                  
-                                  {/* Section 1: 現況 (藍色) */}
                                   <div className="mb-3">
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>現況 (vs 0-1歲人口)</span>
@@ -721,11 +719,7 @@ const SocialWelfareView = () => {
                                       <span className="text-xl font-bold">{(data.coverageNow * 100).toFixed(1)}%</span>
                                     </div>
                                   </div>
-                                  
-                                  {/* Divider */}
                                   <div className="border-t border-slate-100 my-3"></div>
-                                  
-                                  {/* Section 2: 布建後 (青綠色) */}
                                   <div>
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>布建後 (118年推估)</span>
@@ -1162,7 +1156,7 @@ const SocialHousingDashboard = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // 篩選器狀態: 預設為空 (不選任何社宅) -> 顯示為0
+  // 篩選器狀態: 預設為空
   const [selectedSites, setSelectedSites] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -1196,7 +1190,6 @@ const SocialHousingDashboard = () => {
         const res = await fetch(VULNERABLE_SHEET_URL).then(r => r.text());
         const parsed = parseData(res);
         setData(parsed);
-        // 初始化時不設定 selectedSites，保持為空，實現「歸0」效果
       } catch (error) {
         console.error("Error fetching vulnerable data:", error);
       } finally {
@@ -1206,15 +1199,16 @@ const SocialHousingDashboard = () => {
     fetchData();
   }, []);
 
+  // 取得社宅清單 (移除最後4個非社宅項目)
   const allSites = useMemo(() => {
     if (data.length === 0) return [];
     const sites = new Set();
     data.forEach(row => {
-      // 嚴格從 Index 0 抓取社宅名稱
       let name = row._raw && row._raw[FIXED_INDICES.siteName];
       if (name) sites.add(String(name).trim());
     });
-    return Array.from(sites).sort();
+    // 排序後移除最後4個
+    return Array.from(sites).sort().slice(0, -4);
   }, [data]);
 
   const toggleSite = (site) => {
@@ -1224,20 +1218,32 @@ const SocialHousingDashboard = () => {
   const handleSelectAll = () => setSelectedSites(allSites);
   const handleClearAll = () => setSelectedSites([]);
 
-  // 過濾數據: 嚴格依賴 selectedSites
+  // 過濾數據: 
+  // 1. 若有搜尋關鍵字 -> 優先顯示搜尋結果
+  // 2. 若無搜尋關鍵字 -> 顯示已勾選社宅
+  // 3. 若以上皆空 -> 顯示全部 (預設狀態)
   const filteredData = useMemo(() => {
     if (data.length === 0) return [];
-    // 若無選取任何社宅，回傳空陣列
-    if (selectedSites.length === 0) return [];
+    
+    // 優先：搜尋連動
+    if (searchTerm.trim() !== '') {
+        return data.filter(row => {
+            let name = row._raw && row._raw[FIXED_INDICES.siteName];
+            return name && String(name).trim().includes(searchTerm.trim());
+        });
+    }
 
+    // 其次：若無勾選任何社宅，則回傳全部資料 (預設狀態)
+    if (selectedSites.length === 0) return data; 
+
+    // 最後：回傳勾選的社宅
     return data.filter(row => {
       let name = row._raw && row._raw[FIXED_INDICES.siteName];
       return name && selectedSites.includes(String(name).trim());
     });
-  }, [data, selectedSites]);
+  }, [data, selectedSites, searchTerm]);
 
   const stats = useMemo(() => {
-    // 預設空值
     const emptyStats = {
       totalPeople: 0, totalHouse: 0,
       elderly: { people: 0, house: 0 },
@@ -1268,7 +1274,6 @@ const SocialHousingDashboard = () => {
     const siteDisabilityMap = {};
 
     filteredData.forEach(row => {
-      // Helper to safely get value by index
       const getValue = (idx) => {
         if (row._raw && row._raw[idx] !== undefined) return String(row._raw[idx]).trim();
         return '';
@@ -1382,7 +1387,7 @@ const SocialHousingDashboard = () => {
             >
               <Filter size={16}/>
               <span>
-                {selectedSites.length === 0 ? '請選擇社宅' : 
+                {selectedSites.length === 0 ? '全部社宅 (預設)' : 
                  selectedSites.length === allSites.length ? '全部社宅' : 
                  `已選 ${selectedSites.length} 處社宅`}
               </span>
@@ -1432,103 +1437,93 @@ const SocialHousingDashboard = () => {
         <StatCard title="中低收入戶" people={stats.midLow.people} house={stats.midLow.house} totalPeople={stats.totalPeople} totalHouse={stats.totalHouse} colorClass="bg-teal-500" icon={Target} />
       </div>
 
-      {selectedSites.length > 0 ? (
-        <>
-          {/* 圖表區 Row 1 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-              <div className="flex items-center gap-3 mb-6">
-                 <div className="p-2 bg-blue-50 text-blue-500 rounded-lg"><BarChart3 size={20}/></div>
-                 <h3 className="text-lg font-bold text-slate-700">低收入戶類別結構 (0-4類)</h3>
-              </div>
-              <div className="h-[350px]">
-                 <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={stats.charts.lowIncome} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
-                     <XAxis type="number" hide />
-                     <YAxis dataKey="name" type="category" width={50} tick={{fontSize: 12, fill: '#64748b'}} />
-                     <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '戶數']} />
-                     <Bar dataKey="value" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={30}>
-                        <LabelList dataKey="label" position="right" fill="#64748b" fontSize={12} />
-                     </Bar>
-                   </BarChart>
-                 </ResponsiveContainer>
-              </div>
-              <p className="text-center text-xs text-slate-400 mt-2">* 統計單位：戶數 (排除重複戶號)</p>
-            </div>
-
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-              <div className="flex items-center gap-3 mb-6">
-                 <div className="p-2 bg-rose-50 text-rose-500 rounded-lg"><PieChartIcon size={20}/></div>
-                 <h3 className="text-lg font-bold text-slate-700">身心障礙類別統計</h3>
-              </div>
-              <div className="h-[350px]">
-                 <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={stats.charts.disability} layout="vertical" margin={{ top: 5, right: 80, left: 20, bottom: 5 }}>
-                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
-                     <XAxis type="number" hide />
-                     <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 11, fill: '#64748b'}} interval={0} />
-                     <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
-                     <Bar dataKey="value" fill="#F43F5E" radius={[0, 4, 4, 0]} barSize={20}>
-                        <LabelList dataKey="label" position="right" fill="#64748b" fontSize={11} />
-                     </Bar>
-                   </BarChart>
-                 </ResponsiveContainer>
-              </div>
-              <p className="text-center text-xs text-slate-400 mt-2">* 統計單位：人數</p>
-            </div>
+      {/* 圖表區 Row 1 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-3 mb-6">
+             <div className="p-2 bg-blue-50 text-blue-500 rounded-lg"><BarChart3 size={20}/></div>
+             <h3 className="text-lg font-bold text-slate-700">低收入戶類別結構 (0-4類)</h3>
           </div>
-
-          {/* 圖表區 Row 2: Top 10 分析 (僅在多選或全選時有意義，單選時只有一條Bar) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-             <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-                <div className="flex items-center gap-3 mb-6">
-                   <div className="p-2 bg-amber-50 text-amber-500 rounded-lg"><TrendingUp size={20}/></div>
-                   <h3 className="text-lg font-bold text-slate-700">獨居長者人數 Top 10 社宅</h3>
-                </div>
-                <div className="h-[350px]">
-                   <ResponsiveContainer width="100%" height="100%">
-                     <BarChart data={stats.charts.top10Elderly} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                       <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
-                       <XAxis type="number" hide />
-                       <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#64748b'}} interval={0}/>
-                       <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
-                       <Bar dataKey="value" fill="#F59E0B" radius={[0, 4, 4, 0]} barSize={20}>
-                          <LabelList dataKey="value" position="right" fill="#64748b" fontSize={12} formatter={(val)=>`${val}人`}/>
-                       </Bar>
-                     </BarChart>
-                   </ResponsiveContainer>
-                </div>
-             </div>
-
-             <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-                <div className="flex items-center gap-3 mb-6">
-                   <div className="p-2 bg-rose-50 text-rose-500 rounded-lg"><TrendingUp size={20}/></div>
-                   <h3 className="text-lg font-bold text-slate-700">身心障礙人數 Top 10 社宅</h3>
-                </div>
-                <div className="h-[350px]">
-                   <ResponsiveContainer width="100%" height="100%">
-                     <BarChart data={stats.charts.top10Disability} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                       <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
-                       <XAxis type="number" hide />
-                       <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#64748b'}} interval={0}/>
-                       <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
-                       <Bar dataKey="value" fill="#EC4899" radius={[0, 4, 4, 0]} barSize={20}>
-                          <LabelList dataKey="value" position="right" fill="#64748b" fontSize={12} formatter={(val)=>`${val}人`}/>
-                       </Bar>
-                     </BarChart>
-                   </ResponsiveContainer>
-                </div>
-             </div>
+          <div className="h-[350px]">
+             <ResponsiveContainer width="100%" height="100%">
+               <BarChart data={stats.charts.lowIncome} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
+                 <XAxis type="number" hide />
+                 <YAxis dataKey="name" type="category" width={50} tick={{fontSize: 12, fill: '#64748b'}} />
+                 <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '戶數']} />
+                 <Bar dataKey="value" fill="#3B82F6" radius={[0, 4, 4, 0]} barSize={30}>
+                    <LabelList dataKey="label" position="right" fill="#64748b" fontSize={12} />
+                 </Bar>
+               </BarChart>
+             </ResponsiveContainer>
           </div>
-        </>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-           <Search size={48} className="text-slate-300 mb-4"/>
-           <h3 className="text-xl font-bold text-slate-500">請選擇社會住宅以檢視數據</h3>
-           <p className="text-slate-400 mt-2">請從上方篩選器勾選一個或多個社宅</p>
+          <p className="text-center text-xs text-slate-400 mt-2">* 統計單位：戶數 (排除重複戶號)</p>
         </div>
-      )}
+
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-3 mb-6">
+             <div className="p-2 bg-rose-50 text-rose-500 rounded-lg"><PieChartIcon size={20}/></div>
+             <h3 className="text-lg font-bold text-slate-700">身心障礙類別統計</h3>
+          </div>
+          <div className="h-[350px]">
+             <ResponsiveContainer width="100%" height="100%">
+               <BarChart data={stats.charts.disability} layout="vertical" margin={{ top: 5, right: 80, left: 20, bottom: 5 }}>
+                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
+                 <XAxis type="number" hide />
+                 <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 11, fill: '#64748b'}} interval={0} />
+                 <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
+                 <Bar dataKey="value" fill="#F43F5E" radius={[0, 4, 4, 0]} barSize={20}>
+                    <LabelList dataKey="label" position="right" fill="#64748b" fontSize={11} />
+                 </Bar>
+               </BarChart>
+             </ResponsiveContainer>
+          </div>
+          <p className="text-center text-xs text-slate-400 mt-2">* 統計單位：人數</p>
+        </div>
+      </div>
+
+      {/* 圖表區 Row 2: Top 10 分析 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3 mb-6">
+               <div className="p-2 bg-amber-50 text-amber-500 rounded-lg"><TrendingUp size={20}/></div>
+               <h3 className="text-lg font-bold text-slate-700">獨居長者人數 Top 10 社宅</h3>
+            </div>
+            <div className="h-[350px]">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={stats.charts.top10Elderly} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
+                   <XAxis type="number" hide />
+                   <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#64748b'}} interval={0}/>
+                   <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
+                   <Bar dataKey="value" fill="#F59E0B" radius={[0, 4, 4, 0]} barSize={20}>
+                      <LabelList dataKey="value" position="right" fill="#64748b" fontSize={12} formatter={(val)=>`${val}人`}/>
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
+            </div>
+         </div>
+
+         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3 mb-6">
+               <div className="p-2 bg-rose-50 text-rose-500 rounded-lg"><TrendingUp size={20}/></div>
+               <h3 className="text-lg font-bold text-slate-700">身心障礙人數 Top 10 社宅</h3>
+            </div>
+            <div className="h-[350px]">
+               <ResponsiveContainer width="100%" height="100%">
+                 <BarChart data={stats.charts.top10Disability} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0"/>
+                   <XAxis type="number" hide />
+                   <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#64748b'}} interval={0}/>
+                   <Tooltip cursor={{fill: '#f8fafc'}} formatter={(value) => [value, '人數']} />
+                   <Bar dataKey="value" fill="#EC4899" radius={[0, 4, 4, 0]} barSize={20}>
+                      <LabelList dataKey="value" position="right" fill="#64748b" fontSize={12} formatter={(val)=>`${val}人`}/>
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
+            </div>
+         </div>
+      </div>
 
     </div>
   );
