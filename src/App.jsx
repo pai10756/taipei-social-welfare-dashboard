@@ -709,8 +709,6 @@ const SocialWelfareView = () => {
                               return (
                                 <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm min-w-[220px]">
                                   <h4 className="font-bold text-slate-800 text-lg mb-3">{label}</h4>
-                                  
-                                  {/* Section 1: 現況 (藍色) */}
                                   <div className="mb-3">
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>現況 (vs 0-1歲人口)</span>
@@ -721,11 +719,7 @@ const SocialWelfareView = () => {
                                       <span className="text-xl font-bold">{(data.coverageNow * 100).toFixed(1)}%</span>
                                     </div>
                                   </div>
-                                  
-                                  {/* Divider */}
                                   <div className="border-t border-slate-100 my-3"></div>
-                                  
-                                  {/* Section 2: 布建後 (青綠色) */}
                                   <div>
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>布建後 (118年推估)</span>
@@ -1170,6 +1164,7 @@ const SocialHousingDashboard = () => {
 
   const VULNERABLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTT-_7yLlXfL46QQFLCIwHKEEcBvBuWNiFAsz5KiyLgAuyI7Ur-UFuf_fC5-uzMSfsivZZ1m_ySEDZe/pub?gid=1272555717&single=true&output=csv';
 
+  // 使用 AA 欄位 (Index 26) 計算年齡
   const FIXED_INDICES = {
     siteName: 0,    // A欄
     houseNo: 25,    // Z欄
@@ -1177,7 +1172,7 @@ const SocialHousingDashboard = () => {
     disability: 7,  // H欄
     welfare: 11,    // L欄
     disType: 9,     // J欄
-    birthDate: 4    // E欄 (出生年月日)
+    age: 26         // AA欄 (年齡)
   };
 
   useEffect(() => {
@@ -1270,8 +1265,8 @@ const SocialHousingDashboard = () => {
     const siteElderlyMap = {};
     const siteDisabilityMap = {};
     
-    // Age Groups
-    const ageGroups = { '0-18歲': 0, '19-64歲': 0, '65歲以上': 0 };
+    // Age Groups (包含 0歲, 1歲)
+    const ageGroups = { '0歲': 0, '1歲': 0, '0-18歲': 0, '19-64歲': 0, '65歲以上': 0 };
 
     filteredData.forEach(row => {
       const getValue = (idx) => {
@@ -1285,7 +1280,7 @@ const SocialHousingDashboard = () => {
       const valDisability = getValue(FIXED_INDICES.disability);
       const valWelfare = getValue(FIXED_INDICES.welfare);
       const valDisType = getValue(FIXED_INDICES.disType);
-      const valBirthDate = getValue(FIXED_INDICES.birthDate);
+      const valAge = getValue(FIXED_INDICES.age); // AA欄
 
       // 全體
       countTotalPeople++;
@@ -1325,20 +1320,15 @@ const SocialHousingDashboard = () => {
         }
       }
       
-      // Age Calculation
-      if (valBirthDate) {
-         let year = 0;
-         const cleanDate = valBirthDate.replace(/[^0-9]/g, '');
-         if (cleanDate.length === 7) year = parseInt(cleanDate.substring(0, 3)) + 1911; 
-         else if (cleanDate.length === 6) year = parseInt(cleanDate.substring(0, 2)) + 1911;
-         else if (cleanDate.length === 8) year = parseInt(cleanDate.substring(0, 4));
-         
-         if (year > 0) {
-            const age = new Date().getFullYear() - year;
-            if (age <= 18) ageGroups['0-18歲']++;
-            else if (age < 65) ageGroups['19-64歲']++;
-            else ageGroups['65歲以上']++;
-         }
+      // Age Calculation (使用 AA 欄位)
+      const age = parseInt(valAge.replace(/[^0-9]/g, '')) || 0;
+      if (valAge !== '') { // 確保有值
+          if (age === 0) ageGroups['0歲']++;
+          if (age === 1) ageGroups['1歲']++;
+          
+          if (age <= 18) ageGroups['0-18歲']++;
+          else if (age < 65) ageGroups['19-64歲']++;
+          else ageGroups['65歲以上']++;
       }
     });
 
@@ -1367,6 +1357,9 @@ const SocialHousingDashboard = () => {
        { name: '65歲以上', value: ageGroups['65歲以上'], color: '#F59E0B' },
     ].filter(d => d.value > 0);
 
+    // Pass detailed 0/1 stats separately
+    const infantStats = { age0: ageGroups['0歲'], age1: ageGroups['1歲'] };
+
     return {
       totalPeople: countTotalPeople,
       totalHouse: setTotalHouse.size,
@@ -1374,7 +1367,8 @@ const SocialHousingDashboard = () => {
       disability: { people: countDisabilityPeople, house: setDisabilityHouse.size },
       lowIncome: { people: countLowIncomePeople, house: setLowIncomeHouse.size },
       midLow: { people: countMidLowPeople, house: setMidLowHouse.size },
-      charts: { lowIncome: lowIncomeChartData, disability: disChartData, top10Elderly, top10Disability, ageStructure: ageChartData }
+      charts: { lowIncome: lowIncomeChartData, disability: disChartData, top10Elderly, top10Disability, ageStructure: ageChartData },
+      infantStats
     };
   }, [filteredData]);
 
@@ -1491,7 +1485,7 @@ const SocialHousingDashboard = () => {
             <div className="bg-indigo-50 rounded-2xl p-6">
                <h4 className="text-indigo-900 font-bold mb-4">65歲以上長者概況</h4>
                <div className="text-4xl font-bold text-indigo-600 mb-2">
-                  {((stats.charts.ageStructure.find(d => d.name === '65歲以上')?.value || 0) / stats.totalPeople * 100).toFixed(1)}%
+                  {stats.totalPeople > 0 ? ((stats.charts.ageStructure.find(d => d.name === '65歲以上')?.value || 0) / stats.totalPeople * 100).toFixed(1) : 0}%
                </div>
                <p className="text-sm text-indigo-400 mb-6">佔全體社宅人口比例</p>
                <div className="space-y-3">
@@ -1500,12 +1494,12 @@ const SocialHousingDashboard = () => {
                      <span className="font-bold text-slate-700">{stats.charts.ageStructure.find(d => d.name === '65歲以上')?.value || 0} 人</span>
                   </div>
                   <div className="flex justify-between text-sm border-b border-indigo-100 pb-2">
-                     <span className="text-slate-500">青壯年(19-64)</span>
-                     <span className="font-bold text-slate-700">{stats.charts.ageStructure.find(d => d.name === '19-64歲')?.value || 0} 人</span>
+                     <span className="text-slate-500">0歲 幼兒</span>
+                     <span className="font-bold text-rose-500">{stats.infantStats.age0} 人</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                     <span className="text-slate-500">兒少(0-18)</span>
-                     <span className="font-bold text-slate-700">{stats.charts.ageStructure.find(d => d.name === '0-18歲')?.value || 0} 人</span>
+                     <span className="text-slate-500">1歲 幼兒</span>
+                     <span className="font-bold text-rose-500">{stats.infantStats.age1} 人</span>
                   </div>
                </div>
             </div>
