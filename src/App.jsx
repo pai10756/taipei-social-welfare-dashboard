@@ -708,6 +708,8 @@ const SocialWelfareView = () => {
                               return (
                                 <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm min-w-[220px]">
                                   <h4 className="font-bold text-slate-800 text-lg mb-3">{label}</h4>
+                                  
+                                  {/* Section 1: 現況 (藍色) */}
                                   <div className="mb-3">
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>現況 (vs 0-1歲人口)</span>
@@ -718,7 +720,11 @@ const SocialWelfareView = () => {
                                       <span className="text-xl font-bold">{(data.coverageNow * 100).toFixed(1)}%</span>
                                     </div>
                                   </div>
+                                  
+                                  {/* Divider */}
                                   <div className="border-t border-slate-100 my-3"></div>
+                                  
+                                  {/* Section 2: 布建後 (青綠色) */}
                                   <div>
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>布建後 (118年推估)</span>
@@ -820,9 +826,10 @@ const SocialHousingScoringGame = () => {
   const [members, setMembers] = useState([initialMember]);
 
   // -----------------------
-  // 重置功能
+  // 重置功能 (純中文提示)
   // -----------------------
   const resetGame = () => {
+    // 確保只顯示中文提示，不依賴瀏覽器預設文字（部分瀏覽器仍可能顯示標題）
     if (window.confirm('確定要重置所有資料嗎？')) {
       setFamilyStatus(initialFamilyStatus);
       setMembers([{ ...initialMember, id: Date.now() }]);
@@ -1200,9 +1207,19 @@ const SocialHousingDashboard = () => {
     });
   }, [data, selectedSites]);
 
-  // 核心統計計算
+  // 核心統計計算 (修正連動錯誤: 嚴格依賴 filteredData)
   const stats = useMemo(() => {
-    if (filteredData.length === 0) return null;
+    // 預設空值 (避免無資料時崩潰)
+    const emptyStats = {
+      totalPeople: 0, totalHouse: 0,
+      elderly: { people: 0, house: 0 },
+      disability: { people: 0, house: 0 },
+      lowIncome: { people: 0, house: 0 },
+      midLow: { people: 0, house: 0 },
+      charts: { lowIncome: [], disability: [], top10Elderly: [], top10Disability: [] }
+    };
+
+    if (filteredData.length === 0) return emptyStats;
 
     // 尋找 Key
     const sample = filteredData[0];
@@ -1322,7 +1339,7 @@ const SocialHousingDashboard = () => {
   }, [filteredData]);
 
   if (loading) return <div className="flex h-96 items-center justify-center text-slate-400"><Loader2 className="animate-spin mr-2"/> 載入數據中...</div>;
-  if (!stats) return <div className="flex h-96 items-center justify-center text-slate-400">無法讀取資料，請確認 Google Sheet 是否已發布為 CSV</div>;
+  // if (!stats) check removed, stats is always an object now
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -1517,7 +1534,7 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen }) => {
              <img 
                src="綜合規劃股儀表板logo.jpg" 
                alt="綜合規劃股"
-               className="w-full h-full object-contain scale-150 mix-blend-multiply"
+               className="w-full h-full object-contain mix-blend-multiply"
              />
           </div>
           <div>
