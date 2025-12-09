@@ -4,7 +4,7 @@ import {
   Loader2, ChevronDown, Baby, TrendingUp, AlertTriangle, Target, Info,
   Smartphone, Sun, Moon, X, Users, Accessibility, HeartHandshake,
   BarChart3, PieChart as PieChartIcon, Menu, Calculator, Plus, Trash2, RotateCcw, Filter, 
-  Crown, Star, Shield, Zap, Sword, Award, HelpCircle
+  Crown, Star, Shield, Zap, Sword, Award, HelpCircle, UserPlus
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, ComposedChart, ReferenceLine,
@@ -1176,7 +1176,8 @@ const SocialHousingDashboard = () => {
     elderly: 12,    // M欄
     disability: 7,  // H欄
     welfare: 11,    // L欄
-    disType: 9      // J欄
+    disType: 9,     // J欄
+    birthDate: 4    // E欄 (出生年月日)
   };
 
   useEffect(() => {
@@ -1237,7 +1238,7 @@ const SocialHousingDashboard = () => {
       let name = row._raw && row._raw[FIXED_INDICES.siteName];
       return name && selectedSites.includes(String(name).trim());
     });
-  }, [data, selectedSites]); // 移除 searchTerm 依賴
+  }, [data, selectedSites]); 
 
   const stats = useMemo(() => {
     const emptyStats = {
@@ -1246,7 +1247,7 @@ const SocialHousingDashboard = () => {
       disability: { people: 0, house: 0 },
       lowIncome: { people: 0, house: 0 },
       midLow: { people: 0, house: 0 },
-      charts: { lowIncome: [], disability: [], top10Elderly: [], top10Disability: [] }
+      charts: { lowIncome: [], disability: [], top10Elderly: [], top10Disability: [], ageStructure: [] }
     };
 
     if (filteredData.length === 0) return emptyStats;
@@ -1268,6 +1269,9 @@ const SocialHousingDashboard = () => {
     const disTypeMap = {};
     const siteElderlyMap = {};
     const siteDisabilityMap = {};
+    
+    // Age Groups
+    const ageGroups = { '0-18歲': 0, '19-64歲': 0, '65歲以上': 0 };
 
     filteredData.forEach(row => {
       const getValue = (idx) => {
@@ -1281,6 +1285,7 @@ const SocialHousingDashboard = () => {
       const valDisability = getValue(FIXED_INDICES.disability);
       const valWelfare = getValue(FIXED_INDICES.welfare);
       const valDisType = getValue(FIXED_INDICES.disType);
+      const valBirthDate = getValue(FIXED_INDICES.birthDate);
 
       // 全體
       countTotalPeople++;
@@ -1319,6 +1324,22 @@ const SocialHousingDashboard = () => {
            if (houseNo) lowIncomeTypeMap[type].add(houseNo);
         }
       }
+      
+      // Age Calculation
+      if (valBirthDate) {
+         let year = 0;
+         const cleanDate = valBirthDate.replace(/[^0-9]/g, '');
+         if (cleanDate.length === 7) year = parseInt(cleanDate.substring(0, 3)) + 1911; 
+         else if (cleanDate.length === 6) year = parseInt(cleanDate.substring(0, 2)) + 1911;
+         else if (cleanDate.length === 8) year = parseInt(cleanDate.substring(0, 4));
+         
+         if (year > 0) {
+            const age = new Date().getFullYear() - year;
+            if (age <= 18) ageGroups['0-18歲']++;
+            else if (age < 65) ageGroups['19-64歲']++;
+            else ageGroups['65歲以上']++;
+         }
+      }
     });
 
     const lowIncomeChartData = Object.entries(lowIncomeTypeMap).map(([name, set]) => ({ name, value: set.size })).sort((a, b) => a.name.localeCompare(b.name));
@@ -1338,6 +1359,13 @@ const SocialHousingDashboard = () => {
     const getTop10 = (map) => Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
     const top10Elderly = getTop10(siteElderlyMap);
     const top10Disability = getTop10(siteDisabilityMap);
+    
+    // Age Chart Data
+    const ageChartData = [
+       { name: '0-18歲', value: ageGroups['0-18歲'], color: '#10B981' }, 
+       { name: '19-64歲', value: ageGroups['19-64歲'], color: '#3B82F6' },
+       { name: '65歲以上', value: ageGroups['65歲以上'], color: '#F59E0B' },
+    ].filter(d => d.value > 0);
 
     return {
       totalPeople: countTotalPeople,
@@ -1346,7 +1374,7 @@ const SocialHousingDashboard = () => {
       disability: { people: countDisabilityPeople, house: setDisabilityHouse.size },
       lowIncome: { people: countLowIncomePeople, house: setLowIncomeHouse.size },
       midLow: { people: countMidLowPeople, house: setMidLowHouse.size },
-      charts: { lowIncome: lowIncomeChartData, disability: disChartData, top10Elderly, top10Disability }
+      charts: { lowIncome: lowIncomeChartData, disability: disChartData, top10Elderly, top10Disability, ageStructure: ageChartData }
     };
   }, [filteredData]);
 
@@ -1432,6 +1460,57 @@ const SocialHousingDashboard = () => {
         <StatCard title="低收入戶" people={stats.lowIncome.people} house={stats.lowIncome.house} totalPeople={stats.totalPeople} totalHouse={stats.totalHouse} colorClass="bg-blue-500" icon={HeartHandshake} />
         <StatCard title="中低收入戶" people={stats.midLow.people} house={stats.midLow.house} totalPeople={stats.totalPeople} totalHouse={stats.totalHouse} colorClass="bg-teal-500" icon={Target} />
       </div>
+      
+      {/* 新增：年齡結構分析 */}
+      <section className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+         <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-indigo-50 text-indigo-500 rounded-lg"><UserPlus size={20}/></div>
+            <h3 className="text-lg font-bold text-slate-700">社宅人口年齡結構分析</h3>
+         </div>
+         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
+            <div className="h-[300px] col-span-2">
+               <ResponsiveContainer width="100%" height="100%">
+                 <PieChart>
+                    <Pie 
+                      data={stats.charts.ageStructure} 
+                      cx="50%" cy="50%" 
+                      innerRadius={60} 
+                      outerRadius={100} 
+                      paddingAngle={2} 
+                      dataKey="value"
+                    >
+                      {stats.charts.ageStructure.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(val) => [`${val}人`, '人數']} />
+                    <Legend verticalAlign="middle" align="right" layout="vertical"/>
+                 </PieChart>
+               </ResponsiveContainer>
+            </div>
+            <div className="bg-indigo-50 rounded-2xl p-6">
+               <h4 className="text-indigo-900 font-bold mb-4">65歲以上長者概況</h4>
+               <div className="text-4xl font-bold text-indigo-600 mb-2">
+                  {((stats.charts.ageStructure.find(d => d.name === '65歲以上')?.value || 0) / stats.totalPeople * 100).toFixed(1)}%
+               </div>
+               <p className="text-sm text-indigo-400 mb-6">佔全體社宅人口比例</p>
+               <div className="space-y-3">
+                  <div className="flex justify-between text-sm border-b border-indigo-100 pb-2">
+                     <span className="text-slate-500">長者總人數</span>
+                     <span className="font-bold text-slate-700">{stats.charts.ageStructure.find(d => d.name === '65歲以上')?.value || 0} 人</span>
+                  </div>
+                  <div className="flex justify-between text-sm border-b border-indigo-100 pb-2">
+                     <span className="text-slate-500">青壯年(19-64)</span>
+                     <span className="font-bold text-slate-700">{stats.charts.ageStructure.find(d => d.name === '19-64歲')?.value || 0} 人</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                     <span className="text-slate-500">兒少(0-18)</span>
+                     <span className="font-bold text-slate-700">{stats.charts.ageStructure.find(d => d.name === '0-18歲')?.value || 0} 人</span>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </section>
 
       {/* 圖表區 Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
