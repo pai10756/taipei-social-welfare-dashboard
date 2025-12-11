@@ -4,7 +4,7 @@ import {
   Loader2, ChevronDown, Baby, TrendingUp, AlertTriangle, Target, Info,
   Smartphone, Sun, Moon, X, Users, Accessibility, HeartHandshake,
   BarChart3, PieChart as PieChartIcon, Menu, Calculator, Plus, Trash2, RotateCcw, Filter, 
-  Crown, Star, Shield, Zap, Sword, Award, HelpCircle, UserPlus
+  Crown, Star, Shield, Zap, Sword, Award, HelpCircle, UserPlus, List
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, ComposedChart, ReferenceLine,
@@ -246,6 +246,15 @@ const SocialWelfareView = () => {
     return baseList.filter(item => item.baseName.includes(pmSearchTerm));
   }, [baseList, pmSearchTerm]);
 
+  // 新增：取得選中基地的所有設施
+  const selectedFacilities = useMemo(() => {
+    if (!selectedBase) return [];
+    return processedData
+      .filter(item => item.baseName === selectedBase.baseName)
+      .map(item => item.name)
+      .filter(name => name);
+  }, [selectedBase, processedData]);
+
   const stats = useMemo(() => {
     const typeLabor = "公辦民營(勞務)";
     const typeCommission = "公辦民營(委營)";
@@ -476,20 +485,41 @@ const SocialWelfareView = () => {
               )}
             </div>
 
-            <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 min-h-[120px] flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500 font-medium mb-1">對應 PM (專案負責人)</p>
-                <div className="text-2xl font-bold text-slate-800">
-                  {selectedBase ? (
-                    selectedBase.pmName && selectedBase.pmName.trim() !== '' ? selectedBase.pmName : <span className="text-slate-400 text-lg">查無</span>
-                  ) : (
-                    <span className="text-slate-300 text-lg">-- 請選擇基地 --</span>
-                  )}
-                </div>
-              </div>
-              <div className="bg-white p-3 rounded-full shadow-sm text-blue-500">
-                <User size={32} />
-              </div>
+            <div className="flex flex-col gap-4">
+               {/* PM Card */}
+               <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 min-h-[120px] flex items-center justify-between">
+                 <div>
+                   <p className="text-sm text-slate-500 font-medium mb-1">對應 PM (專案負責人)</p>
+                   <div className="text-2xl font-bold text-slate-800">
+                     {selectedBase ? (
+                       selectedBase.pmName && selectedBase.pmName.trim() !== '' ? selectedBase.pmName : <span className="text-slate-400 text-lg">查無</span>
+                     ) : (
+                       <span className="text-slate-300 text-lg">-- 請選擇基地 --</span>
+                     )}
+                   </div>
+                 </div>
+                 <div className="bg-white p-3 rounded-full shadow-sm text-blue-500">
+                   <User size={32} />
+                 </div>
+               </div>
+
+               {/* Facilities List (Updated) */}
+               {selectedBase && selectedFacilities.length > 0 && (
+                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+                     <div className="flex items-center gap-2 mb-3">
+                        <List size={18} className="text-slate-400"/>
+                        <p className="text-sm font-bold text-slate-600">基地內設施項目 ({selectedFacilities.length})</p>
+                     </div>
+                     <div className="flex flex-wrap gap-2">
+                         {selectedFacilities.map((fac, i) => (
+                             <div key={i} className="px-3 py-1.5 bg-slate-50 text-slate-700 text-sm font-medium rounded-lg border border-slate-100 flex items-center gap-2">
+                                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+                                 {fac}
+                             </div>
+                         ))}
+                     </div>
+                  </div>
+               )}
             </div>
           </div>
       </section>
@@ -709,6 +739,8 @@ const SocialWelfareView = () => {
                               return (
                                 <div className="bg-white p-4 rounded-xl shadow-lg border border-slate-100 text-sm min-w-[220px]">
                                   <h4 className="font-bold text-slate-800 text-lg mb-3">{label}</h4>
+                                  
+                                  {/* Section 1: 現況 (藍色) */}
                                   <div className="mb-3">
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>現況 (vs 0-1歲人口)</span>
@@ -719,7 +751,11 @@ const SocialWelfareView = () => {
                                       <span className="text-xl font-bold">{(data.coverageNow * 100).toFixed(1)}%</span>
                                     </div>
                                   </div>
+                                  
+                                  {/* Divider */}
                                   <div className="border-t border-slate-100 my-3"></div>
+                                  
+                                  {/* Section 2: 布建後 (青綠色) */}
                                   <div>
                                     <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
                                       <span>布建後 (118年推估)</span>
@@ -1242,7 +1278,8 @@ const SocialHousingDashboard = () => {
       disability: { people: 0, house: 0 },
       lowIncome: { people: 0, house: 0 },
       midLow: { people: 0, house: 0 },
-      charts: { lowIncome: [], disability: [], top10Elderly: [], top10Disability: [], ageStructure: [] }
+      charts: { lowIncome: [], disability: [], top10Elderly: [], top10Disability: [], ageStructure: [] },
+      infantStats: { age0: 0, age1: 0 }
     };
 
     if (filteredData.length === 0) return emptyStats;
